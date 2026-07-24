@@ -2851,8 +2851,30 @@
       return { settings: { ...cleanSettings, accounts: [...cleanSettings.accounts, account] }, account, changed: true };
     }
 
+    function ensureFinanceAccountsForTransactions(settingsSource = financeSettings, transactionsSource = financeTransactions) {
+      let nextSettings = sanitizeFinanceSettings(settingsSource || financeSettings);
+      let changed = false;
+      const entries = Array.isArray(transactionsSource) ? transactionsSource : [];
+      entries.forEach(transaction => {
+        const accountName = normalizeFinanceText(transaction?.accountName, getDefaultFinanceAccountName(transaction?.paymentMethod));
+        if (!accountName) return;
+        if (getTransactionAccount({ ...transaction, accountName }, nextSettings)) return;
+        const usedIds = new Set(nextSettings.accounts.map(account => account.id));
+        let id = normalizeFinanceText(transaction?.accountId);
+        if (!isValidRecordId(id) || usedIds.has(id)) id = getFinanceAccountIdFromName(accountName);
+        if (usedIds.has(id)) id = createId();
+        nextSettings = { ...nextSettings, accounts: [...nextSettings.accounts, { id, name: accountName, openingBalance: 0 }] };
+        changed = true;
+      });
+      return { settings: nextSettings, changed };
+    }
+
+    function getComputedFinanceAccounts(settingsSource = financeSettings, transactionsSource = financeTransactions) {
+      return ensureFinanceAccountsForTransactions(settingsSource, transactionsSource).settings.accounts;
+    }
+
     function getVisibleFinanceAccounts() {
-      return financeSettings.accounts.filter(account => {
+      return getComputedFinanceAccounts().filter(account => {
         if (account.openingBalance !== 0) return true;
         return financeTransactions.some(transaction => financeAccountMatchesTransaction(account, transaction));
       });
@@ -2864,7 +2886,7 @@
         const name = getDefaultFinanceAccountName(method);
         options.set(normalizeFinanceAccountKey(name), name);
       });
-      financeSettings.accounts.forEach(account => {
+      getComputedFinanceAccounts().forEach(account => {
         options.set(normalizeFinanceAccountKey(account.name), account.name);
       });
       return Array.from(options.values());
@@ -5100,7 +5122,8 @@
         if (!isPlainObject(payload.finance)) return { valid: false, error: "Struktur data keuangan pada backup tidak valid." };
         if (hasDuplicateFinanceAccountName(payload.finance.settings?.accounts || [])) return { valid: false, error: "Nama akun keuangan pada backup duplikat." };
         const backupFinanceSettings = sanitizeFinanceSettings(payload.finance.settings || {});
-        const financeValidation = sanitizeFinanceTransactions(payload.finance.transactions || [], { financeSettings: backupFinanceSettings });
+        const preparedFinanceSettings = ensureFinanceAccountsForTransactions(backupFinanceSettings, payload.finance.transactions || []).settings;
+        const financeValidation = sanitizeFinanceTransactions(payload.finance.transactions || [], { financeSettings: preparedFinanceSettings });
         if (!financeValidation.valid) return { valid: false, error: financeValidation.error };
       }
       return { valid: true };
@@ -5110,11 +5133,12 @@
       if (financePayload === undefined) return { transactions: [], settings: sanitizeFinanceSettings({}) };
       if (hasDuplicateFinanceAccountName(financePayload.settings?.accounts || [])) throw new Error("Nama akun keuangan pada backup duplikat.");
       const sanitizedSettings = sanitizeFinanceSettings(financePayload.settings || {});
-      const transactionValidation = sanitizeFinanceTransactions(financePayload.transactions || [], { financeSettings: sanitizedSettings });
+      const preparedSettings = ensureFinanceAccountsForTransactions(sanitizedSettings, financePayload.transactions || []).settings;
+      const transactionValidation = sanitizeFinanceTransactions(financePayload.transactions || [], { financeSettings: preparedSettings });
       if (!transactionValidation.valid) throw new Error(transactionValidation.error);
       return {
         transactions: transactionValidation.transactions,
-        settings: sanitizedSettings
+        settings: preparedSettings
       };
     }
 
