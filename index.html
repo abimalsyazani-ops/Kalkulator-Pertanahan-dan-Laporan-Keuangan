@@ -614,6 +614,7 @@
           <button class="btn primary" type="submit" id="authLoginBtn">Masuk</button>
           <button class="btn ghost" type="button" id="authRegisterBtn">Daftar</button>
         </div>
+        <button class="btn success is-hidden" type="button" id="authResendBtn">Kirim Ulang Verifikasi</button>
       </form>
       <div class="notice auth-message" id="authMessage">Gunakan email yang sama agar data dapat dibuka dari perangkat lain.</div>
     </section>
@@ -1673,6 +1674,7 @@
       $("supabaseAdminLoadBtn").addEventListener("click", loadSelectedSupabaseUserState);
       $("authForm").addEventListener("submit", handleSupabaseEmailLogin);
       $("authRegisterBtn").addEventListener("click", handleSupabaseEmailRegister);
+      $("authResendBtn").addEventListener("click", handleSupabaseResendConfirmation);
       $("logoutBtn").addEventListener("click", handleSupabaseLogout);
       window.addEventListener("afterprint", () => { $("printResultArea").innerHTML = ""; $("financePrintArea").innerHTML = ""; document.body.classList.remove("printing-finance"); });
       window.addEventListener("storage", handleStorageChange);
@@ -4929,11 +4931,19 @@
       messageEl.classList.toggle("danger", Boolean(isError));
     }
 
+    function setAuthResendVisible(visible) {
+      $("authResendBtn")?.classList.toggle("is-hidden", !visible);
+    }
+
     function setAuthBusy(busy) {
-      ["authLoginBtn", "authRegisterBtn"].forEach(id => {
+      ["authLoginBtn", "authRegisterBtn", "authResendBtn"].forEach(id => {
         const button = $(id);
         if (button) button.disabled = Boolean(busy);
       });
+    }
+
+    function getAuthRedirectUrl() {
+      return window.location.href.split("#")[0];
     }
 
     function getAuthCredentials() {
@@ -4948,6 +4958,10 @@
         return null;
       }
       return { email, password };
+    }
+
+    function isEmailNotConfirmedError(error) {
+      return /email not confirmed/i.test(String(error?.message || error || ""));
     }
 
     function renderAuthState() {
@@ -5145,10 +5159,16 @@
       }
       setAuthBusy(true);
       setAuthMessage("Memeriksa akun...");
+      setAuthResendVisible(false);
       try {
         const { data, error } = await client.auth.signInWithPassword(credentials);
         if (error) {
-          setAuthMessage(error.message || "Email atau password tidak sesuai.", true);
+          if (isEmailNotConfirmedError(error)) {
+            setAuthMessage("Email belum diverifikasi. Buka email dari Supabase lalu klik link konfirmasi, atau kirim ulang verifikasi.", true);
+            setAuthResendVisible(true);
+          } else {
+            setAuthMessage(error.message || "Email atau password tidak sesuai.", true);
+          }
           return;
         }
         supabaseUser = data?.user || data?.session?.user || null;
@@ -5173,8 +5193,12 @@
       }
       setAuthBusy(true);
       setAuthMessage("Mendaftarkan akun...");
+      setAuthResendVisible(false);
       try {
-        const { data, error } = await client.auth.signUp(credentials);
+        const { data, error } = await client.auth.signUp({
+          ...credentials,
+          options: { emailRedirectTo: getAuthRedirectUrl() }
+        });
         if (error) {
           setAuthMessage(error.message || "Akun gagal dibuat.", true);
           return;
@@ -5186,8 +5210,36 @@
           await reconcileSupabaseStateOnStartup();
           setAuthMessage("Akun berhasil dibuat dan login.");
         } else {
-          setAuthMessage("Akun berhasil dibuat. Jika Supabase meminta konfirmasi email, buka email lalu login kembali.");
+          setAuthMessage("Akun berhasil dibuat. Buka email verifikasi dari Supabase, klik link konfirmasi, lalu login kembali.");
+          setAuthResendVisible(true);
         }
+      } finally {
+        setAuthBusy(false);
+      }
+    }
+
+    async function handleSupabaseResendConfirmation() {
+      const credentials = getAuthCredentials();
+      if (!credentials) return;
+      const client = getSupabaseClient();
+      if (!client) {
+        setAuthMessage("Supabase belum dapat dimuat. Periksa koneksi internet.", true);
+        return;
+      }
+      setAuthBusy(true);
+      setAuthMessage("Mengirim ulang email verifikasi...");
+      try {
+        const { error } = await client.auth.resend({
+          type: "signup",
+          email: credentials.email,
+          options: { emailRedirectTo: getAuthRedirectUrl() }
+        });
+        if (error) {
+          setAuthMessage(error.message || "Email verifikasi gagal dikirim ulang.", true);
+          return;
+        }
+        setAuthResendVisible(true);
+        setAuthMessage("Email verifikasi sudah dikirim ulang. Periksa inbox atau folder spam.");
       } finally {
         setAuthBusy(false);
       }
