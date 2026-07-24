@@ -1,6 +1,6 @@
 # Kalkulator Biaya Akta dan Pertanahan - PWA
 
-Proyek ini adalah versi PWA dari aplikasi Kalkulator Biaya Akta dan Pertanahan. Aplikasi tetap dapat berjalan di browser dan offline, dengan Supabase sebagai layanan login, sinkronisasi data cloud, dan penyimpanan bukti pembayaran.
+Proyek ini adalah versi PWA dari aplikasi Kalkulator Biaya Akta dan Pertanahan. Aplikasi tetap dapat berjalan di browser dan offline, dengan Supabase sebagai layanan sinkronisasi otomatis dan penyimpanan bukti pembayaran.
 
 ## Menjalankan Lokal
 
@@ -21,7 +21,7 @@ Kemudian buka `http://localhost:4173`.
 
 ## Penyimpanan Data
 
-Riwayat, pengaturan, invoice, dan laporan keuangan tetap menggunakan LocalStorage sebagai cache/offline dengan key lama yang kompatibel. Saat pengguna masuk Supabase, snapshot data dapat disinkronkan ke tabel `app_user_state`, sedangkan bukti pembayaran baru disimpan ke bucket private `payment-proofs`.
+Riwayat, pengaturan, invoice, dan laporan keuangan tetap menggunakan LocalStorage sebagai cache/offline dengan key lama yang kompatibel. Aplikasi membuat sesi Supabase anonymous secara otomatis, lalu menyinkronkan snapshot data ke tabel `app_user_state`. Bukti pembayaran baru disimpan ke bucket private `payment-proofs`.
 
 Backup JSON masih tersedia untuk arsip manual dan pemulihan darurat. Service worker hanya menyimpan file aplikasi statis dan tidak membaca, mengubah, atau menghapus LocalStorage.
 

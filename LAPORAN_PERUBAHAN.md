@@ -136,3 +136,12 @@ Tambahan revisi: 21 Juli 2026
 - Menjelaskan bahwa Backup JSON tetap dipertahankan untuk arsip manual dan pemulihan darurat.
 - Memperbarui README agar sesuai dengan arsitektur PWA + Supabase Auth + Supabase Storage.
 - Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.1`.
+
+## Sinkronisasi Otomatis Tanpa Form Login 24 Juli 2026
+
+- Menghapus kolom email, password, dan tombol login/sinkron manual dari panel **Sinkronisasi Supabase**.
+- Mengubah alur Supabase menjadi sesi anonymous otomatis melalui `signInAnonymously()`.
+- Mengupload snapshot data lokal ke Supabase secara otomatis setelah sesi anonymous tersedia.
+- Mempertahankan RLS dan user ID Supabase agar data setiap browser tetap terisolasi.
+- Memperbarui README dan laporan pengujian sesuai alur tanpa form login.
+- Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.2`.

@@ -54,7 +54,7 @@ Tambahan pengujian: 21 Juli 2026
 | Cetak PDF laporan keuangan | Lulus | Tombol Cetak PDF memanggil dialog cetak browser dari area laporan keuangan. |
 | Header periode cetak/Word | Lulus | Jenis laporan, periode, dan tanggal cetak tampil terpisah sehingga tanggal tidak bertumpuk. |
 | Schema Supabase | Lulus | Tabel `app_user_state` tersedia, RLS aktif, dan policy select/insert/update/delete per user sudah terpasang. |
-| Panel Supabase | Lulus | Menu Pengaturan Tarif memiliki kontrol Masuk, Daftar, Keluar, Sinkronkan Sekarang, Upload Data Lokal, dan Ambil Data Cloud. |
+| Panel Supabase | Lulus | Menu Pengaturan Tarif menampilkan status sinkronisasi otomatis tanpa kolom email/password atau tombol login manual. |
 | Supabase Storage | Lulus | Bucket private `payment-proofs` tersedia dengan batas 10 MB dan tipe gambar/PDF. |
 | Policy bukti pembayaran | Lulus | Policy Storage membatasi akses per folder user ID dan memberi admin akses baca lintas pengguna. |
 | Role admin | Lulus | Tabel `app_profiles` tersedia dengan RLS; role admin dapat membaca daftar profil dan data cloud pengguna. |
@@ -104,4 +104,4 @@ Lingkungan pengujian internal tidak dapat mengaktifkan prompt pemasangan sistem 
 
 ## Catatan Keamanan Data
 
-Folder dan ZIP tidak memuat riwayat, backup JSON, atau data klien. Data pengguna tetap berada pada LocalStorage perangkat masing-masing sampai pengguna login dan menjalankan sinkronisasi Supabase; bukti pembayaran baru yang dipilih sebagai file browser sungguhan disimpan pada Supabase Storage private.
+Folder dan ZIP tidak memuat riwayat, backup JSON, atau data klien. Data pengguna tetap berada pada LocalStorage perangkat masing-masing sebagai cache offline dan disinkronkan otomatis ke Supabase saat sesi anonymous tersedia; bukti pembayaran baru yang dipilih sebagai file browser sungguhan disimpan pada Supabase Storage private.
