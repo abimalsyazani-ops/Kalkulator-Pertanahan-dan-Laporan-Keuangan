@@ -1061,6 +1061,28 @@
             <div class="notice" style="margin-top:14px">Data aplikasi tersimpan di browser. Lakukan backup berkala untuk mencegah kehilangan data.</div>
           </form>
         </div>
+        <div class="panel">
+          <div class="section-title">
+            <div>
+              <h3>Sinkronisasi Supabase</h3>
+              <p>Masuk untuk menyimpan backup data ke cloud. LocalStorage tetap digunakan agar aplikasi bisa berjalan offline.</p>
+            </div>
+            <span class="status-pill" id="supabaseStatus">Belum masuk</span>
+          </div>
+          <div class="grid four">
+            <div class="field span-2"><label for="supabaseEmail">Email</label><input id="supabaseEmail" type="email" autocomplete="email"></div>
+            <div class="field span-2"><label for="supabasePassword">Password</label><input id="supabasePassword" type="password" autocomplete="current-password"></div>
+          </div>
+          <div class="toolbar" style="margin-top:14px">
+            <button class="btn primary" type="button" id="supabaseSignInBtn">Masuk</button>
+            <button class="btn ghost" type="button" id="supabaseSignUpBtn">Daftar</button>
+            <button class="btn ghost" type="button" id="supabaseSignOutBtn">Keluar</button>
+            <button class="btn success" type="button" id="supabaseSyncBtn">Sinkronkan Sekarang</button>
+            <button class="btn ghost" type="button" id="supabasePushBtn">Upload Data Lokal</button>
+            <button class="btn ghost" type="button" id="supabasePullBtn">Ambil Data Cloud</button>
+          </div>
+          <div class="notice" style="margin-top:14px" id="supabaseNotice">Data cloud tersimpan per akun Supabase. Gunakan Upload Data Lokal setelah login pertama untuk memindahkan data lama dari browser ini.</div>
+        </div>
       </section>
     </main>
   </div>
@@ -1069,6 +1091,7 @@
   <div id="financePrintArea" class="finance-print-area"></div>
   <nav class="mobile-bottom-nav no-print" id="bottomNav" aria-label="Navigasi bawah"></nav>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.75.0/dist/umd/supabase.min.js"></script>
   <script>
     // Konfigurasi dasar aplikasi dan LocalStorage.
     const APP_SCHEMA_VERSION = "3.3";
@@ -1083,6 +1106,11 @@
       records: "aktaPpatRecordsV1",
       corruptedBackup: "aktaPpatCorruptedBackupV1",
       sequence: "aktaPpatSequenceV1"
+    };
+    const SUPABASE_CONFIG = {
+      url: "https://ryypcolefvucmkzugard.supabase.co",
+      publishableKey: "sb_publishable_ea767U1x_eqY12nyv0AXTQ_bG7BI6uS",
+      stateTable: "app_user_state"
     };
 
     const menuItems = [
@@ -1272,6 +1300,10 @@
     let financePaymentMode = "payment";
     let financeAccountEditId = null;
     let financeSaving = false;
+    let supabaseClient = null;
+    let supabaseUser = null;
+    let supabaseSyncing = false;
+    let supabaseAutoSyncTimer = null;
 
     // Utilitas angka, format Rupiah, dan akses elemen.
     const $ = (id) => document.getElementById(id);
@@ -1441,6 +1473,7 @@
 
     function persistSettings() {
       localStorage.setItem(APP_KEYS.settings, JSON.stringify(settings));
+      queueSupabaseAutoUpload();
     }
 
     function persistRecordsSafely(nextRecords) {
@@ -1448,6 +1481,7 @@
       try {
         localStorage.setItem(APP_KEYS.records, serialized);
         records = nextRecords;
+        queueSupabaseAutoUpload();
         return { success: true };
       } catch (error) {
         console.error(error);
@@ -1601,6 +1635,12 @@
       $("exportBackupBtn").addEventListener("click", () => exportBackup());
       $("importBackupBtn").addEventListener("click", () => $("backupFileInput").click());
       $("backupFileInput").addEventListener("change", importBackupFromFile);
+      $("supabaseSignInBtn").addEventListener("click", signInSupabase);
+      $("supabaseSignUpBtn").addEventListener("click", signUpSupabase);
+      $("supabaseSignOutBtn").addEventListener("click", signOutSupabase);
+      $("supabaseSyncBtn").addEventListener("click", syncSupabaseState);
+      $("supabasePushBtn").addEventListener("click", () => uploadLocalStateToSupabase(false));
+      $("supabasePullBtn").addEventListener("click", () => pullSupabaseState(true));
       window.addEventListener("afterprint", () => { $("printResultArea").innerHTML = ""; $("financePrintArea").innerHTML = ""; document.body.classList.remove("printing-finance"); });
       window.addEventListener("storage", handleStorageChange);
     }
@@ -2918,6 +2958,7 @@
       try {
         localStorage.setItem(FINANCE_KEYS.settings, JSON.stringify(sanitized));
         financeSettings = sanitized;
+        queueSupabaseAutoUpload();
         return true;
       } catch {
         alert("Data keuangan gagal disimpan. Ruang penyimpanan browser mungkin penuh. Lakukan backup dan hapus data yang tidak diperlukan.");
@@ -2958,6 +2999,7 @@
       }
       financeSettings = sanitizedSettings;
       financeTransactions = sanitizedTransactions.transactions;
+      queueSupabaseAutoUpload();
       return true;
     }
 
@@ -3046,6 +3088,7 @@
       try {
         localStorage.setItem(FINANCE_KEYS.transactions, JSON.stringify(sanitized.transactions));
         financeTransactions = sanitized.transactions;
+        queueSupabaseAutoUpload();
         return true;
       } catch {
         alert("Data keuangan gagal disimpan. Ruang penyimpanan browser mungkin penuh. Lakukan backup dan hapus data yang tidak diperlukan.");
@@ -4569,6 +4612,215 @@
       downloadJsonFile(buildBackupPayload(), fileName);
     }
 
+    function getSupabaseClient() {
+      if (supabaseClient) return supabaseClient;
+      if (!window.supabase?.createClient) return null;
+      supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.publishableKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+      return supabaseClient;
+    }
+
+    function setSupabaseNotice(message, isError = false) {
+      if ($("supabaseNotice")) {
+        $("supabaseNotice").textContent = message;
+        $("supabaseNotice").classList.toggle("danger", Boolean(isError));
+      }
+    }
+
+    function renderSupabaseStatus() {
+      const status = $("supabaseStatus");
+      if (!status) return;
+      status.textContent = supabaseUser?.email ? `Masuk: ${supabaseUser.email}` : "Belum masuk";
+      status.style.background = supabaseUser ? "var(--ok-bg)" : "";
+      status.style.color = supabaseUser ? "var(--ok)" : "";
+    }
+
+    async function initSupabaseSync() {
+      const client = getSupabaseClient();
+      if (!client) {
+        renderSupabaseStatus();
+        setSupabaseNotice("Supabase belum dapat dimuat. Aplikasi tetap berjalan dengan LocalStorage.");
+        return;
+      }
+      const { data } = await client.auth.getSession();
+      supabaseUser = data?.session?.user || null;
+      renderSupabaseStatus();
+      client.auth.onAuthStateChange((_event, session) => {
+        supabaseUser = session?.user || null;
+        renderSupabaseStatus();
+      });
+      if (supabaseUser) setSupabaseNotice("Supabase terhubung. Gunakan Sinkronkan Sekarang untuk menyimpan dan mengambil data terbaru.");
+    }
+
+    async function requireSupabaseUser() {
+      const client = getSupabaseClient();
+      if (!client) {
+        alert("Supabase belum dapat dimuat. Periksa koneksi internet.");
+        return null;
+      }
+      const { data, error } = await client.auth.getUser();
+      if (error || !data?.user) {
+        alert("Masuk ke Supabase terlebih dahulu.");
+        return null;
+      }
+      supabaseUser = data.user;
+      renderSupabaseStatus();
+      return { client, user: data.user };
+    }
+
+    async function signInSupabase() {
+      const client = getSupabaseClient();
+      if (!client) {
+        alert("Supabase belum dapat dimuat. Periksa koneksi internet.");
+        return;
+      }
+      const email = $("supabaseEmail").value.trim();
+      const password = $("supabasePassword").value;
+      if (!email || !password) {
+        alert("Email dan password wajib diisi.");
+        return;
+      }
+      const { data, error } = await client.auth.signInWithPassword({ email, password });
+      if (error) {
+        alert(error.message || "Gagal masuk ke Supabase.");
+        return;
+      }
+      supabaseUser = data?.user || null;
+      renderSupabaseStatus();
+      setSupabaseNotice("Berhasil masuk. Klik Sinkronkan Sekarang atau Upload Data Lokal.");
+    }
+
+    async function signUpSupabase() {
+      const client = getSupabaseClient();
+      if (!client) {
+        alert("Supabase belum dapat dimuat. Periksa koneksi internet.");
+        return;
+      }
+      const email = $("supabaseEmail").value.trim();
+      const password = $("supabasePassword").value;
+      if (!email || !password) {
+        alert("Email dan password wajib diisi.");
+        return;
+      }
+      const { data, error } = await client.auth.signUp({ email, password });
+      if (error) {
+        alert(error.message || "Gagal daftar akun Supabase.");
+        return;
+      }
+      supabaseUser = data?.user || null;
+      renderSupabaseStatus();
+      setSupabaseNotice(data?.session ? "Akun dibuat dan sudah masuk. Upload data lokal untuk mulai sinkronisasi." : "Akun dibuat. Periksa email jika Supabase meminta konfirmasi.");
+    }
+
+    async function signOutSupabase() {
+      const client = getSupabaseClient();
+      if (!client) return;
+      await client.auth.signOut();
+      supabaseUser = null;
+      renderSupabaseStatus();
+      setSupabaseNotice("Sudah keluar dari Supabase. Data lokal tetap tersimpan di browser.");
+    }
+
+    async function fetchSupabaseCloudState() {
+      const auth = await requireSupabaseUser();
+      if (!auth) return null;
+      const { data, error } = await auth.client
+        .from(SUPABASE_CONFIG.stateTable)
+        .select("data, updated_at")
+        .eq("user_id", auth.user.id)
+        .maybeSingle();
+      if (error) {
+        alert(error.message || "Gagal mengambil data Supabase.");
+        return null;
+      }
+      return data || null;
+    }
+
+    async function uploadLocalStateToSupabase(silent = false) {
+      if (supabaseSyncing) return false;
+      const auth = await requireSupabaseUser();
+      if (!auth) return false;
+      supabaseSyncing = true;
+      const payload = buildBackupPayload();
+      const { error } = await auth.client
+        .from(SUPABASE_CONFIG.stateTable)
+        .upsert({ user_id: auth.user.id, data: payload }, { onConflict: "user_id" });
+      supabaseSyncing = false;
+      if (error) {
+        alert(error.message || "Upload data ke Supabase gagal.");
+        return false;
+      }
+      if (!silent) setSupabaseNotice(`Data lokal berhasil diupload ke Supabase pada ${new Date().toLocaleString("id-ID")}.`);
+      return true;
+    }
+
+    function queueSupabaseAutoUpload() {
+      if (!supabaseUser || supabaseSyncing) return;
+      clearTimeout(supabaseAutoSyncTimer);
+      supabaseAutoSyncTimer = setTimeout(() => {
+        uploadLocalStateToSupabase(true).catch(error => {
+          console.error(error);
+          setSupabaseNotice("Auto-sync Supabase gagal. Data lokal tetap tersimpan di browser.", true);
+        });
+      }, 1200);
+    }
+
+    function applyCloudBackupPayload(payload) {
+      const validation = validateBackupPayload(payload);
+      if (!validation.valid) {
+        alert(validation.error);
+        return false;
+      }
+      const importedSettings = sanitizeSettings(payload.settings);
+      const importedRecords = ensureUniqueCalcNumbers(ensureUniqueRecordIds(payload.records));
+      const importedFinance = sanitizeFinanceBackup(payload.finance);
+      if (!importBackupTransaction(importedSettings, importedRecords, importedFinance, payload)) {
+        alert("Data cloud gagal disimpan ke LocalStorage. Ruang penyimpanan browser mungkin penuh.");
+        return false;
+      }
+      settings = importedSettings.settings;
+      settingsNeedsReview = payload.schemaVersion !== APP_SCHEMA_VERSION || settings.settingsReviewed !== true || importedSettings.hadInvalid;
+      records = importedRecords;
+      financeTransactions = importedFinance.transactions;
+      financeSettings = importedFinance.settings;
+      renderSettings();
+      resetForm(false, false);
+      initCalculatorDefaults();
+      refreshAllViews();
+      return true;
+    }
+
+    async function pullSupabaseState(confirmFirst = true) {
+      if (supabaseSyncing) return false;
+      const row = await fetchSupabaseCloudState();
+      if (!row?.data) {
+        setSupabaseNotice("Belum ada data cloud untuk akun ini. Gunakan Upload Data Lokal terlebih dahulu.");
+        return false;
+      }
+      if (confirmFirst && !confirm("Data cloud akan menimpa data lokal di browser ini. Lanjutkan?")) return false;
+      supabaseSyncing = true;
+      const applied = applyCloudBackupPayload(row.data);
+      supabaseSyncing = false;
+      if (applied) setSupabaseNotice(`Data cloud berhasil diambil. Update cloud terakhir: ${row.updated_at || "-"}.`);
+      return applied;
+    }
+
+    async function syncSupabaseState() {
+      if (supabaseSyncing) return;
+      const row = await fetchSupabaseCloudState();
+      if (!row?.data) {
+        await uploadLocalStateToSupabase(true);
+        setSupabaseNotice("Data lokal berhasil dibuat sebagai data cloud pertama.");
+        return;
+      }
+      if (!confirm("Sinkronisasi akan mengambil data cloud ke browser ini, lalu mengupload ulang kondisi terbaru. Lanjutkan?")) return;
+      const pulled = applyCloudBackupPayload(row.data);
+      if (!pulled) return;
+      await uploadLocalStateToSupabase(true);
+      setSupabaseNotice(`Sinkronisasi selesai pada ${new Date().toLocaleString("id-ID")}.`);
+    }
+
     function ensureUniqueCalcNumbers(inputRecords) {
       const used = new Set();
       return inputRecords.map(record => {
@@ -4801,6 +5053,7 @@
       refreshAllViews();
       setPage("dashboard");
       initPwaUi();
+      initSupabaseSync();
       openPageFromQuery();
     });
     registerPwaServiceWorker();

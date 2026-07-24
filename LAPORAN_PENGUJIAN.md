@@ -53,6 +53,9 @@ Tambahan pengujian: 21 Juli 2026
 | Word laporan keuangan | Lulus | Tombol Unduh Word membentuk dokumen `.doc` dari format cetak laporan. |
 | Cetak PDF laporan keuangan | Lulus | Tombol Cetak PDF memanggil dialog cetak browser dari area laporan keuangan. |
 | Header periode cetak/Word | Lulus | Jenis laporan, periode, dan tanggal cetak tampil terpisah sehingga tanggal tidak bertumpuk. |
+| Schema Supabase | Lulus | Tabel `app_user_state` tersedia, RLS aktif, dan policy select/insert/update/delete per user sudah terpasang. |
+| Panel Supabase | Lulus | Menu Pengaturan Tarif memiliki kontrol Masuk, Daftar, Keluar, Sinkronkan Sekarang, Upload Data Lokal, dan Ambil Data Cloud. |
+| Fallback LocalStorage | Lulus | LocalStorage lama tetap dipakai sebagai cache/offline dan test regresi laporan keuangan tetap lulus. |
 | Data jasa notaris | Lulus | 11 kategori dan 43 layanan tertanam di file HTML. |
 | Pencarian dan filter jasa notaris | Lulus | Pencarian, filter kategori, reset, hasil kosong, dan tombol Salin lolos simulasi fungsi. |
 | Service worker | Lulus | Pemeriksaan sintaks dan simulasi siklus hidup tanpa error. |

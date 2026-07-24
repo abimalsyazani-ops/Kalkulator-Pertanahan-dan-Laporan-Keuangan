@@ -105,3 +105,14 @@ Tambahan revisi: 21 Juli 2026
 - Memisahkan informasi **Jenis laporan**, **Periode**, dan **Tanggal cetak** agar tanggal tidak bertumpuk atau dobel.
 - Untuk laporan harian, periode kini tampil satu kali sebagai tanggal laporan.
 - Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.1.8`.
+
+## Migrasi Supabase 24 Juli 2026
+
+- Menambahkan koneksi Supabase ke project `https://ryypcolefvucmkzugard.supabase.co` menggunakan publishable key.
+- Menambahkan tabel cloud `public.app_user_state` untuk menyimpan snapshot backup data aplikasi per akun Supabase.
+- Mengaktifkan RLS dan policy agar setiap user hanya dapat membaca dan menulis datanya sendiri.
+- Menambahkan panel **Sinkronisasi Supabase** pada menu **Pengaturan Tarif**.
+- Menambahkan tombol **Masuk**, **Daftar**, **Keluar**, **Sinkronkan Sekarang**, **Upload Data Lokal**, dan **Ambil Data Cloud**.
+- Menjaga LocalStorage lama sebagai cache/fallback agar aplikasi tetap bisa berjalan offline.
+- Menambahkan file dokumentasi schema `SUPABASE_SCHEMA.sql`.
+- Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.1.9`.
