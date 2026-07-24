@@ -152,3 +152,11 @@ Tambahan revisi: 21 Juli 2026
 - Ringkasan keuangan, invoice siap dicatat, dan daftar transaksi utama kembali memakai **Semua Periode** secara otomatis.
 - Filter tanggal khusus tetap tersedia pada daftar transaksi dan tab **Laporan** untuk kebutuhan cetak, Word, PDF, dan Excel.
 - Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.3`.
+
+## Penyederhanaan Filter Daftar Transaksi 24 Juli 2026
+
+- Menyederhanakan filter **Daftar Transaksi** menjadi satu kolom pencarian dan satu pilihan kategori.
+- Menghapus filter terpisah untuk tanggal, jenis transaksi, metode pembayaran, invoice, serta kas/rekening pada daftar transaksi.
+- Kolom pencarian sekarang mencakup tanggal, jenis transaksi, kategori, keterangan, klien/vendor, invoice, metode, akun, catatan, referensi, dan bukti pembayaran.
+- Filter periode pada tab **Laporan** tetap tersedia untuk kebutuhan cetak, PDF, Word, dan Excel.
+- Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.4`.

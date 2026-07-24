@@ -973,14 +973,8 @@
             </div>
           </div>
           <div class="grid four" style="margin-bottom:14px">
-            <div class="field"><label for="financeFilterStart">Tanggal mulai</label><input id="financeFilterStart" type="date"></div>
-            <div class="field"><label for="financeFilterEnd">Tanggal akhir</label><input id="financeFilterEnd" type="date"></div>
-            <div class="field"><label for="financeFilterType">Jenis transaksi</label><select id="financeFilterType"><option value="">Semua jenis</option><option value="income">Pemasukan</option><option value="expense">Pengeluaran</option></select></div>
-            <div class="field"><label for="financeFilterCategory">Kategori</label><input id="financeFilterCategory"></div>
-            <div class="field"><label for="financeFilterMethod">Metode pembayaran</label><select id="financeFilterMethod"><option value="">Semua metode</option></select></div>
-            <div class="field"><label for="financeFilterSearch">Nama klien atau keterangan</label><input id="financeFilterSearch"></div>
-            <div class="field"><label for="financeFilterInvoice">Invoice</label><input id="financeFilterInvoice"></div>
-            <div class="field"><label for="financeFilterAccount">Kas atau rekening</label><input id="financeFilterAccount"></div>
+            <div class="field span-2"><label for="financeFilterSearch">Cari transaksi</label><input id="financeFilterSearch" placeholder="Cari klien, vendor, invoice, akun, metode, atau keterangan"></div>
+            <div class="field span-2"><label for="financeFilterCategory">Kategori</label><select id="financeFilterCategory"><option value="">Semua kategori</option></select></div>
           </div>
           <div class="toolbar" style="margin-bottom:14px">
             <button class="btn primary" type="button" id="applyFinanceFilterBtn">Terapkan Filter</button>
@@ -3268,24 +3262,26 @@
     }
 
     function applyFinanceFilters(source = getFinanceReportTransactions(getFinancePeriodRange())) {
-      const start = $("financeFilterStart")?.value || "";
-      const end = $("financeFilterEnd")?.value || "";
-      const type = $("financeFilterType")?.value || "";
       const category = ($("financeFilterCategory")?.value || "").toLowerCase().trim();
-      const method = $("financeFilterMethod")?.value || "";
       const search = ($("financeFilterSearch")?.value || "").toLowerCase().trim();
-      const invoice = ($("financeFilterInvoice")?.value || "").toLowerCase().trim();
-      const account = ($("financeFilterAccount")?.value || "").toLowerCase().trim();
       return source.filter(item => {
-        const haystack = [item.description, item.clientName, getFinanceVendorName(item), item.notes, item.referenceNumber, item.receiptFileName].join(" ").toLowerCase();
-        return (!start || item.date >= start) &&
-          (!end || item.date <= end) &&
-          (!type || item.type === type) &&
-          (!category || item.category.toLowerCase().includes(category)) &&
-          (!method || item.paymentMethod === method) &&
-          (!search || haystack.includes(search)) &&
-          (!invoice || String(item.invoiceNumber || "").toLowerCase().includes(invoice)) &&
-          (!account || String(item.accountName || "").toLowerCase().includes(account));
+        const haystack = [
+          item.date,
+          item.type === "income" ? "pemasukan" : "pengeluaran",
+          item.category,
+          item.description,
+          item.clientName,
+          getFinanceVendorName(item),
+          item.invoiceNumber,
+          item.paymentMethod,
+          item.accountName,
+          item.notes,
+          item.referenceNumber,
+          item.receiptReference,
+          item.receiptFileName
+        ].join(" ").toLowerCase();
+        return (!category || item.category.toLowerCase() === category) &&
+          (!search || haystack.includes(search));
       });
     }
 
@@ -3358,13 +3354,6 @@
       if (!$("financeTransactionsTable")) return;
       const periodRange = getFinancePeriodRange();
       if (isInvalidFinanceRange(periodRange)) {
-        $("financeFilterResult").textContent = "0 transaksi";
-        $("financeFilterTotals").textContent = "Rp0 / Rp0";
-        $("financeTransactionsTable").innerHTML = `<div class="empty">Tanggal mulai tidak boleh lebih besar dari tanggal akhir.</div>`;
-        return;
-      }
-      const filterRange = { start: $("financeFilterStart")?.value || "", end: $("financeFilterEnd")?.value || "" };
-      if (isInvalidFinanceRange(filterRange)) {
         $("financeFilterResult").textContent = "0 transaksi";
         $("financeFilterTotals").textContent = "Rp0 / Rp0";
         $("financeTransactionsTable").innerHTML = `<div class="empty">Tanggal mulai tidak boleh lebih besar dari tanggal akhir.</div>`;
@@ -3920,9 +3909,10 @@
       document.querySelectorAll("[data-finance-currency]").forEach(input => bindCurrencyElement(input));
       const methodOptions = financePaymentMethods.map(method => `<option>${escapeHtml(method)}</option>`).join("");
       ["financePayMethod", "financeIncomeMethod", "financeExpenseMethod"].forEach(id => $(id).innerHTML = methodOptions);
-      $("financeFilterMethod").innerHTML += methodOptions;
       $("financeIncomeCategory").innerHTML = financeIncomeCategories.map(item => `<option>${escapeHtml(item)}</option>`).join("");
       $("financeExpenseCategory").innerHTML = financeExpenseCategories.map(item => `<option>${escapeHtml(item)}</option>`).join("");
+      const filterCategoryOptions = ["", ...financeIncomeCategories, ...financeExpenseCategories].map(item => item ? `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>` : `<option value="">Semua kategori</option>`).join("");
+      $("financeFilterCategory").innerHTML = filterCategoryOptions;
       $("financeExpenseCategoryList").innerHTML = financeExpenseCategories.map(item => `<option value="${escapeHtml(item)}"></option>`).join("");
       document.querySelectorAll(".finance-tab-button").forEach(button => button.addEventListener("click", () => setFinanceTab(button.dataset.financeTab)));
       $("addFinanceAccountBtn").addEventListener("click", () => resetFinanceAccountForm(true));
@@ -3948,9 +3938,9 @@
       $("saveExpenseBtn").addEventListener("click", () => saveManualFinanceTransaction("expense"));
       $("resetIncomeFormBtn").addEventListener("click", resetFinanceIncomeForm);
       $("resetExpenseFormBtn").addEventListener("click", resetFinanceExpenseForm);
-      ["financeFilterStart", "financeFilterEnd", "financeFilterType", "financeFilterCategory", "financeFilterMethod", "financeFilterSearch", "financeFilterInvoice", "financeFilterAccount"].forEach(id => $(id).addEventListener("input", renderFinanceTransactions));
+      ["financeFilterCategory", "financeFilterSearch"].forEach(id => $(id).addEventListener("input", renderFinanceTransactions));
       $("applyFinanceFilterBtn").addEventListener("click", renderFinanceTransactions);
-      $("resetFinanceFilterBtn").addEventListener("click", () => { ["financeFilterStart", "financeFilterEnd", "financeFilterType", "financeFilterCategory", "financeFilterMethod", "financeFilterSearch", "financeFilterInvoice", "financeFilterAccount"].forEach(id => $(id).value = ""); renderFinanceTransactions(); });
+      $("resetFinanceFilterBtn").addEventListener("click", () => { ["financeFilterCategory", "financeFilterSearch"].forEach(id => $(id).value = ""); renderFinanceTransactions(); });
       $("financeTransactionsTable").addEventListener("click", event => {
         const button = event.target.closest("[data-finance-id]");
         if (!button) return;
