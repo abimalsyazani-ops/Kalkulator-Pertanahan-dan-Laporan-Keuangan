@@ -76,6 +76,13 @@
     .auth-form { display: grid; gap: 14px; }
     .auth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .auth-message { margin-top: 14px; }
+    .password-input-wrap {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .password-input-wrap .btn { min-height: 42px; }
 
     .sidebar {
       width: 286px;
@@ -608,7 +615,10 @@
         </div>
         <div class="field">
           <label for="authPassword">Password</label>
-          <input id="authPassword" type="password" autocomplete="current-password" minlength="6" required>
+          <div class="password-input-wrap">
+            <input id="authPassword" type="password" autocomplete="current-password" minlength="6" required>
+            <button class="btn ghost small" type="button" id="authTogglePassword" aria-pressed="false">Tampilkan</button>
+          </div>
         </div>
         <div class="auth-actions">
           <button class="btn primary" type="submit" id="authLoginBtn">Masuk</button>
@@ -1675,6 +1685,7 @@
       $("authForm").addEventListener("submit", handleSupabaseEmailLogin);
       $("authRegisterBtn").addEventListener("click", handleSupabaseEmailRegister);
       $("authResendBtn").addEventListener("click", handleSupabaseResendConfirmation);
+      $("authTogglePassword").addEventListener("click", toggleAuthPasswordVisibility);
       $("logoutBtn").addEventListener("click", handleSupabaseLogout);
       window.addEventListener("afterprint", () => { $("printResultArea").innerHTML = ""; $("financePrintArea").innerHTML = ""; document.body.classList.remove("printing-finance"); });
       window.addEventListener("storage", handleStorageChange);
@@ -4962,6 +4973,17 @@
 
     function isEmailNotConfirmedError(error) {
       return /email not confirmed/i.test(String(error?.message || error || ""));
+    }
+
+    function toggleAuthPasswordVisibility() {
+      const input = $("authPassword");
+      const button = $("authTogglePassword");
+      if (!input || !button) return;
+      const shouldShow = input.type === "password";
+      input.type = shouldShow ? "text" : "password";
+      button.textContent = shouldShow ? "Sembunyikan" : "Tampilkan";
+      button.setAttribute("aria-pressed", String(shouldShow));
+      input.focus();
     }
 
     function renderAuthState() {
