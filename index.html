@@ -1042,7 +1042,7 @@
             </div>
             <span class="status-pill" id="supabaseStatus">Menyiapkan sinkronisasi</span>
           </div>
-          <div class="notice" style="margin-top:14px" id="supabaseNotice">Aplikasi akan membuat sesi Supabase otomatis di browser ini. Tidak perlu mengisi email atau password.</div>
+          <div class="notice" style="margin-top:14px" id="supabaseNotice">Aplikasi memakai sesi Supabase otomatis per browser. Data cloud dicek terlebih dahulu sebelum upload agar data lama tidak tertimpa.</div>
           <div class="notice is-hidden" style="margin-top:14px" id="supabaseAdminPanel">
             <strong>Panel Admin</strong>
             <div class="grid four" style="margin-top:10px">
@@ -1279,6 +1279,8 @@
     let supabaseProfile = null;
     let supabaseSyncing = false;
     let supabaseAutoSyncTimer = null;
+    let supabaseInitialSyncComplete = false;
+    let supabasePendingLocalUpload = false;
 
     // Utilitas angka, format Rupiah, dan akses elemen.
     const $ = (id) => document.getElementById(id);
@@ -2921,13 +2923,30 @@
       return `${invoiceId}-payment`;
     }
 
-    function getRecordedInvoicePayment(invoiceId) {
-      const sourceKey = getInvoicePaymentSourceKey(invoiceId);
-      return financeTransactions.find(item => item.type === "income" && item.sourceType === "invoice_payment" && item.sourceKey === sourceKey) || null;
+    function getInvoicePaymentSourcePrefix(invoiceId) {
+      return `${invoiceId}-payment-`;
     }
 
-    function getInvoiceRecordingStatus(invoiceId) {
-      return getRecordedInvoicePayment(invoiceId) ? "Sudah Dicatat" : "Belum Dicatat";
+    function getInvoicePaymentRecords(invoiceId) {
+      const legacySourceKey = getInvoicePaymentSourceKey(invoiceId);
+      const sourcePrefix = getInvoicePaymentSourcePrefix(invoiceId);
+      return financeTransactions.filter(item =>
+        item.type === "income" &&
+        item.sourceType === "invoice_payment" &&
+        item.invoiceRecordId === invoiceId &&
+        (!item.sourceKey || item.sourceKey === legacySourceKey || item.sourceKey?.startsWith(sourcePrefix))
+      );
+    }
+
+    function getRecordedInvoicePayment(invoiceId) {
+      return getInvoicePaymentRecords(invoiceId)[0] || null;
+    }
+
+    function getInvoiceRecordingStatus(invoiceId, invoiceTotal = 0) {
+      const paid = getInvoicePaidAmount(invoiceId);
+      if (paid <= 0) return "Belum Dicatat";
+      if (paid < invoiceTotal) return "Dicatat Sebagian";
+      return "Sudah Dicatat";
     }
 
     function isInvoiceReadyForFinance(invoice) {
@@ -2938,9 +2957,10 @@
       const filter = $("financeInvoiceRecordFilter")?.value || "unrecorded";
       return records.map(getInvoiceFinancialSnapshot).filter(item => {
         if (!item || !item.id || item.invoiceTotal <= 0 || !isDateInRange(item.date, range) || !isInvoiceReadyForFinance(item)) return false;
-        const recorded = Boolean(getRecordedInvoicePayment(item.id));
-        if (filter === "recorded") return recorded;
-        if (filter === "unrecorded") return !recorded;
+        const outstanding = getInvoiceOutstandingForFinance(item);
+        const fullyRecorded = outstanding <= 0 && getInvoicePayments(item.id).length > 0;
+        if (filter === "recorded") return fullyRecorded;
+        if (filter === "unrecorded") return outstanding > 0;
         return true;
       });
     }
@@ -3424,12 +3444,13 @@
         const paid = getInvoicePaidAmount(item.id);
         const outstanding = Math.max(0, item.invoiceTotal - paid);
         const financeStatus = getInvoiceFinanceStatus(item.invoiceTotal, paid);
-        const recordedPayment = getRecordedInvoicePayment(item.id);
-        const recordingStatus = recordedPayment ? "Sudah Dicatat" : "Belum Dicatat";
+        const recordedPayment = getRecordedInvoicePayment(item.id) || getInvoicePayments(item.id)[0] || null;
+        const recordingStatus = getInvoiceRecordingStatus(item.id, item.invoiceTotal);
         const warning = paid < item.invoiceTotal ? `<div class="notice danger" style="margin-top:6px">Status invoice tercatat Lunas, tetapi pembayaran belum tercatat penuh dalam laporan keuangan.</div>` : "";
-        const action = recordedPayment
-          ? `<button class="btn small ghost btn-view-finance" type="button" data-finance-id="${escapeHtml(recordedPayment.id)}">Lihat Pembayaran</button>`
-          : `<button class="btn small primary btn-pay-invoice" type="button" data-invoice-id="${escapeHtml(item.id)}">Catat Pembayaran</button>`;
+        const action = [
+          outstanding > 0 ? `<button class="btn small primary btn-pay-invoice" type="button" data-invoice-id="${escapeHtml(item.id)}">Catat Pembayaran</button>` : "",
+          recordedPayment ? `<button class="btn small ghost btn-view-finance" type="button" data-finance-id="${escapeHtml(recordedPayment.id)}">Lihat Pembayaran</button>` : ""
+        ].filter(Boolean).join("");
         return `<tr><td>${escapeHtml(item.number)}</td><td>${escapeHtml(item.date || "-")}</td><td>${escapeHtml(item.clientName)}</td><td>${escapeHtml(item.serviceType)}</td><td>${money(item.invoiceTotal)}</td><td><span class="status-pill">${escapeHtml(item.status || "-")}</span></td><td><span class="status-pill">${escapeHtml(recordingStatus)}</span><small>${escapeHtml(financeStatus)} - Sisa ${money(outstanding)}</small>${warning}</td><td><div class="table-actions">${action}</div></td></tr>`;
       }).join("")}</tbody></table></div>`;
     }
@@ -3851,8 +3872,10 @@
     function openInvoicePayment(invoiceId, mode = "payment") {
       const invoice = records.map(getInvoiceFinancialSnapshot).find(item => item?.id === invoiceId);
       if (!invoice) return;
-      if (mode === "payment" && getRecordedInvoicePayment(invoice.id)) {
-        alert("Invoice ini sudah dicatat sebagai pembayaran.");
+      const paid = getInvoicePaidAmount(invoice.id);
+      const outstanding = Math.max(0, invoice.invoiceTotal - paid);
+      if (mode === "payment" && outstanding <= 0) {
+        alert("Invoice ini sudah lunas dalam laporan keuangan.");
         return;
       }
       const sourceKey = `${invoice.id}-down-payment`;
@@ -3860,7 +3883,6 @@
         alert("Uang muka invoice ini sudah pernah dicatat.");
         return;
       }
-      const paid = getInvoicePaidAmount(invoice.id);
       financePaymentInvoiceId = invoice.id;
       financePaymentMode = mode;
       $("financePaymentPanel").classList.remove("is-hidden");
@@ -3871,9 +3893,9 @@
       $("financePayServiceType").value = invoice.serviceType;
       $("financePayInvoiceTotal").value = money(invoice.invoiceTotal);
       $("financePayRecorded").value = money(paid);
-      $("financePayOutstanding").value = money(Math.max(0, invoice.invoiceTotal - paid));
+      $("financePayOutstanding").value = money(outstanding);
       $("financePayDate").value = todayLocalISO();
-      setCurrencyInputForElement($("financePayAmount"), mode === "downPayment" ? invoice.downPayment : Math.max(0, invoice.invoiceTotal - paid));
+      setCurrencyInputForElement($("financePayAmount"), mode === "downPayment" ? invoice.downPayment : outstanding);
       $("financePayMethod").value = "Tunai";
       updateAccountInputFromMethod("financePayMethod", "financePayAccount", true);
       $("financePayReference").value = "";
@@ -3892,8 +3914,8 @@
         alert("Nominal pembayaran tidak valid.");
         return;
       }
-      if (financePaymentMode === "payment" && getRecordedInvoicePayment(invoice.id)) {
-        alert("Invoice ini sudah dicatat sebagai pembayaran.");
+      if (financePaymentMode === "payment" && outstanding <= 0) {
+        alert("Invoice ini sudah lunas dalam laporan keuangan.");
         return;
       }
       const paidAfterSave = paid + amount;
@@ -3903,7 +3925,6 @@
       $("saveInvoicePaymentBtn").disabled = true;
       const account = findFinanceAccountByName($("financePayAccount").value);
       const downPaymentSourceKey = `${invoice.id}-down-payment`;
-      const paymentSourceKey = getInvoicePaymentSourceKey(invoice.id);
       if (financePaymentMode === "downPayment" && financeTransactions.some(item => item.sourceKey === downPaymentSourceKey)) {
         alert("Uang muka invoice ini sudah pernah dicatat.");
         financeSaving = false;
@@ -3911,6 +3932,7 @@
         return;
       }
       const transactionId = createId();
+      const paymentSourceKey = `${getInvoicePaymentSourcePrefix(invoice.id)}${transactionId}`;
       const proofFile = $("financePayTransferProof")?.files?.[0];
       let uploadedReceipt = null;
       try {
@@ -4773,6 +4795,41 @@
       };
     }
 
+    function getBackupPayloadStats(payload = buildBackupPayload()) {
+      const payloadRecords = Array.isArray(payload?.records) ? payload.records : [];
+      const payloadTransactions = Array.isArray(payload?.finance?.transactions) ? payload.finance.transactions : [];
+      const invoiceTotal = payloadRecords.reduce((sum, record) => {
+        const total = normalizeFinanceAmount(record?.summary?.grandTotal ?? record?.calculation?.values?.grandTotal ?? 0) ?? 0;
+        return sum + total;
+      }, 0);
+      const transactionTotal = payloadTransactions.reduce((sum, transaction) => {
+        const amount = normalizeFinanceAmount(transaction?.amount) ?? 0;
+        return sum + amount;
+      }, 0);
+      return {
+        records: payloadRecords.length,
+        transactions: payloadTransactions.length,
+        invoiceTotal,
+        transactionTotal,
+        exportedAt: payload?.exportedAt || ""
+      };
+    }
+
+    function hasMeaningfulBackupData(payload) {
+      const stats = getBackupPayloadStats(payload);
+      return stats.records > 0 || stats.transactions > 0 || stats.invoiceTotal > 0 || stats.transactionTotal > 0;
+    }
+
+    function isCloudBackupAhead(cloudPayload, localPayload) {
+      const cloud = getBackupPayloadStats(cloudPayload);
+      const local = getBackupPayloadStats(localPayload);
+      if (cloud.records > local.records) return true;
+      if (cloud.transactions > local.transactions) return true;
+      if (cloud.invoiceTotal > local.invoiceTotal && cloud.records >= local.records) return true;
+      if (cloud.transactionTotal > local.transactionTotal && cloud.transactions >= local.transactions) return true;
+      return false;
+    }
+
     function downloadJsonFile(payload, fileName) {
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -4947,8 +5004,7 @@
       });
       if (supabaseUser) {
         if (supabaseProfile?.role === "admin") await loadSupabaseAdminUsers(false);
-        await uploadLocalStateToSupabase(true);
-        setSupabaseNotice("Sinkronisasi otomatis aktif. Data lokal akan dikirim ke Supabase selama perangkat online.");
+        await reconcileSupabaseStateOnStartup();
       }
     }
 
@@ -4993,7 +5049,7 @@
       return { client, user: data.user };
     }
 
-    async function fetchSupabaseCloudState() {
+    async function fetchSupabaseCloudState(silent = false) {
       const auth = await requireSupabaseUser();
       if (!auth) return null;
       const { data, error } = await auth.client
@@ -5002,14 +5058,53 @@
         .eq("user_id", auth.user.id)
         .maybeSingle();
       if (error) {
-        alert(error.message || "Gagal mengambil data Supabase.");
-        return null;
+        if (silent) setSupabaseNotice("Data cloud belum dapat diperiksa. Upload otomatis ditahan agar data cloud tidak tertimpa.", true);
+        else alert(error.message || "Gagal mengambil data Supabase.");
+        return { __error: true };
       }
       return data || null;
     }
 
+    async function reconcileSupabaseStateOnStartup() {
+      const localPayload = buildBackupPayload();
+      const localHasData = hasMeaningfulBackupData(localPayload);
+      const row = await fetchSupabaseCloudState(true);
+      if (row?.__error) {
+        supabaseInitialSyncComplete = false;
+        supabasePendingLocalUpload = true;
+        return false;
+      }
+      if (row?.data) {
+        const cloudHasData = hasMeaningfulBackupData(row.data);
+        if (cloudHasData && (!localHasData || isCloudBackupAhead(row.data, localPayload))) {
+          const applied = applyCloudBackupPayload(row.data);
+          supabaseInitialSyncComplete = true;
+          supabasePendingLocalUpload = false;
+          if (applied) setSupabaseNotice(`Data cloud berhasil dipulihkan sebelum sinkronisasi otomatis. Update cloud terakhir: ${row.updated_at || "-"}.`);
+          return applied;
+        }
+        supabaseInitialSyncComplete = true;
+        supabasePendingLocalUpload = false;
+        setSupabaseNotice("Sinkronisasi otomatis aktif. Data cloud sudah dicek; perubahan lokal berikutnya akan dikirim ke Supabase.");
+        return true;
+      }
+      supabaseInitialSyncComplete = true;
+      if (localHasData || supabasePendingLocalUpload) {
+        await uploadLocalStateToSupabase(true);
+        supabasePendingLocalUpload = false;
+        setSupabaseNotice("Data lokal berhasil dibuat sebagai data cloud pertama.");
+        return true;
+      }
+      setSupabaseNotice("Sinkronisasi otomatis aktif. Belum ada data lokal atau cloud untuk sesi ini.");
+      return true;
+    }
+
     async function uploadLocalStateToSupabase(silent = false) {
       if (supabaseSyncing) return false;
+      if (!supabaseInitialSyncComplete) {
+        supabasePendingLocalUpload = true;
+        return false;
+      }
       const auth = await requireSupabaseUser();
       if (!auth) return false;
       supabaseSyncing = true;
@@ -5027,7 +5122,14 @@
     }
 
     function queueSupabaseAutoUpload() {
-      if (!supabaseUser || supabaseSyncing) return;
+      if (!supabaseUser || supabaseSyncing) {
+        supabasePendingLocalUpload = true;
+        return;
+      }
+      if (!supabaseInitialSyncComplete) {
+        supabasePendingLocalUpload = true;
+        return;
+      }
       clearTimeout(supabaseAutoSyncTimer);
       supabaseAutoSyncTimer = setTimeout(() => {
         uploadLocalStateToSupabase(true).catch(error => {
@@ -5065,6 +5167,7 @@
     async function pullSupabaseState(confirmFirst = true) {
       if (supabaseSyncing) return false;
       const row = await fetchSupabaseCloudState();
+      if (row?.__error) return false;
       if (!row?.data) {
         setSupabaseNotice("Belum ada data cloud untuk sesi ini. Data lokal akan dibuat sebagai data cloud pertama saat sinkronisasi otomatis berjalan.");
         return false;
@@ -5080,9 +5183,10 @@
     async function syncSupabaseState() {
       if (supabaseSyncing) return;
       const row = await fetchSupabaseCloudState();
+      if (row?.__error) return;
       if (!row?.data) {
-        await uploadLocalStateToSupabase(true);
-        setSupabaseNotice("Data lokal berhasil dibuat sebagai data cloud pertama.");
+        const uploaded = await uploadLocalStateToSupabase(true);
+        if (uploaded) setSupabaseNotice("Data lokal berhasil dibuat sebagai data cloud pertama.");
         return;
       }
       if (!confirm("Sinkronisasi akan mengambil data cloud ke browser ini, lalu mengupload ulang kondisi terbaru. Lanjutkan?")) return;
