@@ -145,3 +145,10 @@ Tambahan revisi: 21 Juli 2026
 - Mempertahankan RLS dan user ID Supabase agar data setiap browser tetap terisolasi.
 - Memperbarui README dan laporan pengujian sesuai alur tanpa form login.
 - Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.2`.
+
+## Perapihan Filter Periode Keuangan 24 Juli 2026
+
+- Menghapus panel **Filter Periode Keuangan** dari menu **Laporan Keuangan**.
+- Ringkasan keuangan, invoice siap dicatat, dan daftar transaksi utama kembali memakai **Semua Periode** secara otomatis.
+- Filter tanggal khusus tetap tersedia pada daftar transaksi dan tab **Laporan** untuk kebutuhan cetak, Word, PDF, dan Excel.
+- Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.3`.

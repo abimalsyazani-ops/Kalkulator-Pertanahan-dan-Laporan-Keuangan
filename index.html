@@ -817,21 +817,6 @@
           <button class="btn ghost small finance-tab-button" type="button" data-finance-tab="report">Laporan</button>
         </div>
 
-        <div class="panel">
-          <div class="section-title">
-            <div>
-              <h3>Filter Periode Keuangan</h3>
-              <p>Perhitungan berdasarkan uang yang benar-benar diterima atau dikeluarkan.</p>
-            </div>
-          </div>
-          <div class="grid four">
-            <div class="field"><label for="financePeriodType">Periode</label><select id="financePeriodType"><option value="today">Hari Ini</option><option value="month">Bulan Ini</option><option value="year">Tahun Ini</option><option value="all">Semua Periode</option><option value="custom">Periode Khusus</option></select></div>
-            <div class="field"><label for="financePeriodStart">Tanggal mulai</label><input id="financePeriodStart" type="date"></div>
-            <div class="field"><label for="financePeriodEnd">Tanggal akhir</label><input id="financePeriodEnd" type="date"></div>
-            <div class="field"><label>&nbsp;</label><button class="btn ghost" type="button" id="resetFinancePeriodBtn">Reset Periode</button></div>
-          </div>
-        </div>
-
         <div class="finance-tab-panel active" id="financeSummaryTab">
           <div class="finance-summary-grid">
             <div class="metric"><span>Total pemasukan</span><strong id="financeTotalIncome">Rp0</strong></div>
@@ -3940,8 +3925,6 @@
       $("financeExpenseCategory").innerHTML = financeExpenseCategories.map(item => `<option>${escapeHtml(item)}</option>`).join("");
       $("financeExpenseCategoryList").innerHTML = financeExpenseCategories.map(item => `<option value="${escapeHtml(item)}"></option>`).join("");
       document.querySelectorAll(".finance-tab-button").forEach(button => button.addEventListener("click", () => setFinanceTab(button.dataset.financeTab)));
-      ["financePeriodType", "financePeriodStart", "financePeriodEnd"].forEach(id => $(id).addEventListener("input", renderFinanceAll));
-      $("resetFinancePeriodBtn").addEventListener("click", () => { $("financePeriodType").value = "all"; $("financePeriodStart").value = ""; $("financePeriodEnd").value = ""; renderFinanceAll(); });
       $("addFinanceAccountBtn").addEventListener("click", () => resetFinanceAccountForm(true));
       $("saveFinanceAccountBtn").addEventListener("click", saveFinanceAccount);
       $("financeAccountsTable").addEventListener("click", event => {
