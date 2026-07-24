@@ -901,7 +901,7 @@
               <div class="field"><label for="financePayMethod">Metode pembayaran</label><select id="financePayMethod"></select></div>
               <div class="field"><label for="financePayAccount">Nama rekening/kas</label><input id="financePayAccount" list="financeAccountList"></div>
               <div class="field"><label for="financePayReference">Nomor referensi</label><input id="financePayReference"></div>
-              <div class="field"><label for="financePayTransferProof">Referensi bukti pembayaran (nama file saja)</label><input id="financePayTransferProof" type="file" accept="image/*,.pdf"></div>
+              <div class="field"><label for="financePayTransferProof">Bukti pembayaran (Supabase Storage)</label><input id="financePayTransferProof" type="file" accept="image/*,.pdf"></div>
               <div class="field"><label for="financePayNotes">Catatan</label><input id="financePayNotes"></div>
             </div>
             <div class="toolbar" style="margin-top:14px"><button class="btn primary" type="button" id="saveInvoicePaymentBtn">Masukkan Pembayaran</button></div>
@@ -923,7 +923,7 @@
               <div class="field span-2"><label for="financeIncomeDescription">Keterangan</label><input id="financeIncomeDescription"></div>
               <div class="field"><label for="financeIncomeMethod">Metode pembayaran</label><select id="financeIncomeMethod"></select></div>
               <div class="field"><label for="financeIncomeAccount">Kas atau rekening tujuan</label><input id="financeIncomeAccount" list="financeAccountList"></div>
-              <div class="field"><label for="financeIncomeTransferProof">Referensi bukti pembayaran (nama file saja)</label><input id="financeIncomeTransferProof" type="file" accept="image/*,.pdf"></div>
+              <div class="field"><label for="financeIncomeTransferProof">Bukti pembayaran (Supabase Storage)</label><input id="financeIncomeTransferProof" type="file" accept="image/*,.pdf"></div>
               <div class="field span-2"><label for="financeIncomeNotes">Catatan</label><input id="financeIncomeNotes"></div>
             </div>
             <div class="toolbar" style="margin-top:14px"><button class="btn primary" type="button" id="saveIncomeBtn">Simpan Pemasukan</button></div>
@@ -948,7 +948,7 @@
               <div class="field span-2"><label for="financeExpenseDescription">Deskripsi</label><input id="financeExpenseDescription"></div>
               <div class="field"><label for="financeExpenseMethod">Metode pembayaran</label><select id="financeExpenseMethod"></select></div>
               <div class="field"><label for="financeExpenseAccount">Kas atau rekening sumber</label><input id="financeExpenseAccount" list="financeAccountList"></div>
-              <div class="field"><label for="financeExpenseTransferProof">Referensi bukti pembayaran (nama file saja)</label><input id="financeExpenseTransferProof" type="file" accept="image/*,.pdf"></div>
+              <div class="field"><label for="financeExpenseTransferProof">Bukti pembayaran (Supabase Storage)</label><input id="financeExpenseTransferProof" type="file" accept="image/*,.pdf"></div>
               <div class="field span-2"><label for="financeExpenseNotes">Catatan bukti transaksi</label><input id="financeExpenseNotes" placeholder="Contoh: bukti tersimpan di folder kuitansi bulan ini"></div>
             </div>
             <div class="toolbar" style="margin-top:14px"><button class="btn primary" type="button" id="saveExpenseBtn">Simpan Pengeluaran</button></div>
@@ -1082,6 +1082,17 @@
             <button class="btn ghost" type="button" id="supabasePullBtn">Ambil Data Cloud</button>
           </div>
           <div class="notice" style="margin-top:14px" id="supabaseNotice">Data cloud tersimpan per akun Supabase. Gunakan Upload Data Lokal setelah login pertama untuk memindahkan data lama dari browser ini.</div>
+          <div class="notice is-hidden" style="margin-top:14px" id="supabaseAdminPanel">
+            <strong>Panel Admin</strong>
+            <div class="grid four" style="margin-top:10px">
+              <div class="field span-2"><label for="supabaseAdminUserSelect">Data pengguna</label><select id="supabaseAdminUserSelect"></select></div>
+            </div>
+            <div class="toolbar" style="margin-top:10px">
+              <button class="btn ghost" type="button" id="supabaseAdminRefreshBtn">Refresh Pengguna</button>
+              <button class="btn primary" type="button" id="supabaseAdminLoadBtn">Muat Data Pengguna</button>
+            </div>
+            <small>Admin dapat memuat data pengguna untuk memeriksa laporan dan bukti pembayaran dari perangkat lain.</small>
+          </div>
         </div>
       </section>
     </main>
@@ -1110,7 +1121,9 @@
     const SUPABASE_CONFIG = {
       url: "https://ryypcolefvucmkzugard.supabase.co",
       publishableKey: "sb_publishable_ea767U1x_eqY12nyv0AXTQ_bG7BI6uS",
-      stateTable: "app_user_state"
+      stateTable: "app_user_state",
+      profileTable: "app_profiles",
+      proofBucket: "payment-proofs"
     };
 
     const menuItems = [
@@ -1302,6 +1315,7 @@
     let financeSaving = false;
     let supabaseClient = null;
     let supabaseUser = null;
+    let supabaseProfile = null;
     let supabaseSyncing = false;
     let supabaseAutoSyncTimer = null;
 
@@ -1641,6 +1655,8 @@
       $("supabaseSyncBtn").addEventListener("click", syncSupabaseState);
       $("supabasePushBtn").addEventListener("click", () => uploadLocalStateToSupabase(false));
       $("supabasePullBtn").addEventListener("click", () => pullSupabaseState(true));
+      $("supabaseAdminRefreshBtn").addEventListener("click", () => loadSupabaseAdminUsers(true));
+      $("supabaseAdminLoadBtn").addEventListener("click", loadSelectedSupabaseUserState);
       window.addEventListener("afterprint", () => { $("printResultArea").innerHTML = ""; $("financePrintArea").innerHTML = ""; document.body.classList.remove("printing-finance"); });
       window.addEventListener("storage", handleStorageChange);
     }
@@ -2917,7 +2933,8 @@
     }
 
     function getFinanceProofLabel(item) {
-      return item?.receiptFileName ? "Tersimpan" : "-";
+      if (item?.receiptStoragePath) return "Tersimpan di Supabase";
+      return item?.receiptFileName || item?.receiptReference ? "Tersimpan" : "-";
     }
 
     function getFinanceVendorName(transaction) {
@@ -3042,6 +3059,9 @@
         sourceKey: normalizeFinanceText(raw.sourceKey),
         receiptReference: normalizeFinanceText(raw.receiptReference ?? raw.receiptFileName),
         receiptFileName: normalizeFinanceText(raw.receiptFileName),
+        receiptBucket: normalizeFinanceText(raw.receiptBucket),
+        receiptStoragePath: normalizeFinanceText(raw.receiptStoragePath),
+        receiptUploadedAt: normalizeFinanceText(raw.receiptUploadedAt),
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: raw.updatedAt || new Date().toISOString()
       };
@@ -3165,12 +3185,13 @@
       if (item.type === "expense") $("financeExpenseEditId").value = "";
     }
 
-    function showFinanceTransaction(id) {
+    async function showFinanceTransaction(id) {
       const item = financeTransactions.find(entry => entry.id === id);
       if (!item) return;
       const invoiceInfo = getFinanceTransactionInvoiceInfo(item);
       const vendorName = getFinanceVendorName(item);
-      alert([
+      const detailProofLabel = item.receiptStoragePath ? getFinanceProofLabel(item) : (item.receiptFileName || item.receiptReference || "-");
+      const message = [
         `Tanggal: ${item.date}`,
         `Jenis: ${item.type === "income" ? "Pemasukan" : "Pengeluaran"}`,
         `Kategori: ${item.category}`,
@@ -3180,10 +3201,32 @@
         invoiceInfo.warning ? `Peringatan: ${invoiceInfo.warning}` : "",
         `Metode: ${item.paymentMethod}`,
         `Akun: ${item.accountName}`,
-        `Bukti transfer: ${item.receiptFileName || "-"}`,
+        `Bukti transfer: ${detailProofLabel}`,
         `Nominal: ${money(item.amount)}`,
         `Catatan: ${item.notes || "-"}`
-      ].filter(Boolean).join("\n"));
+      ].filter(Boolean).join("\n");
+      if (item.receiptStoragePath && confirm(`${message}\n\nBuka bukti pembayaran sekarang?`)) {
+        await openFinanceReceiptProof(item);
+        return;
+      }
+      alert(message);
+    }
+
+    async function openFinanceReceiptProof(item) {
+      if (!item?.receiptStoragePath) {
+        alert("Bukti pembayaran belum tersimpan di Supabase Storage.");
+        return;
+      }
+      const auth = await requireSupabaseUser();
+      if (!auth) return;
+      const { data, error } = await auth.client.storage
+        .from(item.receiptBucket || SUPABASE_CONFIG.proofBucket)
+        .createSignedUrl(item.receiptStoragePath, 300);
+      if (error || !data?.signedUrl) {
+        alert(error?.message || "Bukti pembayaran tidak dapat dibuka.");
+        return;
+      }
+      window.open(data.signedUrl, "_blank", "noopener");
     }
 
     function getInvoiceFinancialSnapshot(record) {
@@ -3579,7 +3622,7 @@
         trxHeader
       ].concat(summary.transactions.map(item => {
         const invoiceInfo = getFinanceTransactionInvoiceInfo(item);
-        return [item.date, item.type === "income" ? "Pemasukan" : "Pengeluaran", item.category, item.description, getFinanceVendorName(item) || "-", invoiceInfo.warning ? `${invoiceInfo.label} - ${invoiceInfo.warning}` : invoiceInfo.label, item.paymentMethod, item.accountName, item.type === "income" ? item.amount : 0, item.type === "expense" ? item.amount : 0, item.receiptFileName || ""];
+        return [item.date, item.type === "income" ? "Pemasukan" : "Pengeluaran", item.category, item.description, getFinanceVendorName(item) || "-", invoiceInfo.warning ? `${invoiceInfo.label} - ${invoiceInfo.warning}` : invoiceInfo.label, item.paymentMethod, item.accountName, item.type === "income" ? item.amount : 0, item.type === "expense" ? item.amount : 0, getFinanceProofLabel(item)];
       }));
       const transactionSheet = buildFinanceWorksheet(trxRows, [8, 9]);
       transactionSheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: trxHeader.length - 1 } }];
@@ -3592,7 +3635,7 @@
         trxHeader
       ].concat(summary.transactions.filter(item => item.type === "income").map(item => {
         const invoiceInfo = getFinanceTransactionInvoiceInfo(item);
-        return [item.date, "Pemasukan", item.category, item.description, "-", invoiceInfo.warning ? `${invoiceInfo.label} - ${invoiceInfo.warning}` : invoiceInfo.label, item.paymentMethod, item.accountName, item.amount, 0, item.receiptFileName || ""];
+        return [item.date, "Pemasukan", item.category, item.description, "-", invoiceInfo.warning ? `${invoiceInfo.label} - ${invoiceInfo.warning}` : invoiceInfo.label, item.paymentMethod, item.accountName, item.amount, 0, getFinanceProofLabel(item)];
       }));
       const incomeSheet = buildFinanceWorksheet(incomeRows, [8, 9]);
       incomeSheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: trxHeader.length - 1 } }];
@@ -3603,7 +3646,7 @@
         ["Periode", range.label, range.start || "-", range.end || "-"],
         [],
         trxHeader
-      ].concat(summary.transactions.filter(item => item.type === "expense").map(item => [item.date, "Pengeluaran", item.category, item.description, getFinanceVendorName(item) || "-", "-", item.paymentMethod, item.accountName, 0, item.amount, item.receiptFileName || ""]));
+      ].concat(summary.transactions.filter(item => item.type === "expense").map(item => [item.date, "Pengeluaran", item.category, item.description, getFinanceVendorName(item) || "-", "-", item.paymentMethod, item.accountName, 0, item.amount, getFinanceProofLabel(item)]));
       const expenseSheet = buildFinanceWorksheet(expenseRows, [8, 9]);
       expenseSheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: trxHeader.length - 1 } }];
       XLSX.utils.book_append_sheet(workbook, expenseSheet, "PENGELUARAN");
@@ -3664,14 +3707,105 @@
       const proofFile = $("financeIncomeTransferProof").files?.[0];
       const previous = financeTransactions.find(item => item.id === $("financeIncomeEditId").value);
       const account = findFinanceAccountByName($("financeIncomeAccount").value);
-      return { id: $("financeIncomeEditId").value || createId(), type: "income", date: $("financeIncomeDate").value, category: $("financeIncomeCategory").value, description: $("financeIncomeDescription").value || $("financeIncomeSource").value, amount: $("financeIncomeAmount").dataset.raw || $("financeIncomeAmount").value, paymentMethod: $("financeIncomeMethod").value, accountId: account?.id || "", accountName: $("financeIncomeAccount").value, referenceNumber: "", notes: $("financeIncomeNotes").value, receiptFileName: proofFile?.name || previous?.receiptFileName || "", invoiceRecordId: null, invoiceNumber: "", clientName: $("financeIncomeSource").value, serviceType: "", invoiceTotalSnapshot: 0, createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+      return { id: $("financeIncomeEditId").value || createId(), type: "income", date: $("financeIncomeDate").value, category: $("financeIncomeCategory").value, description: $("financeIncomeDescription").value || $("financeIncomeSource").value, amount: $("financeIncomeAmount").dataset.raw || $("financeIncomeAmount").value, paymentMethod: $("financeIncomeMethod").value, accountId: account?.id || "", accountName: $("financeIncomeAccount").value, referenceNumber: "", notes: $("financeIncomeNotes").value, receiptReference: proofFile?.name || previous?.receiptReference || previous?.receiptFileName || "", receiptFileName: proofFile?.name || previous?.receiptFileName || "", receiptBucket: previous?.receiptBucket || "", receiptStoragePath: previous?.receiptStoragePath || "", receiptUploadedAt: previous?.receiptUploadedAt || "", invoiceRecordId: null, invoiceNumber: "", clientName: $("financeIncomeSource").value, serviceType: "", invoiceTotalSnapshot: 0, createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
     }
 
     function collectExpenseForm() {
       const proofFile = $("financeExpenseTransferProof").files?.[0];
       const previous = financeTransactions.find(item => item.id === $("financeExpenseEditId").value);
       const account = findFinanceAccountByName($("financeExpenseAccount").value);
-      return { id: $("financeExpenseEditId").value || createId(), type: "expense", date: $("financeExpenseDate").value, category: $("financeExpenseCategory").value, description: $("financeExpenseDescription").value, amount: $("financeExpenseAmount").dataset.raw || $("financeExpenseAmount").value, paymentMethod: $("financeExpenseMethod").value, accountId: account?.id || "", accountName: $("financeExpenseAccount").value, referenceNumber: "", notes: $("financeExpenseNotes").value, receiptFileName: proofFile?.name || previous?.receiptFileName || "", vendorName: $("financeExpenseVendor").value, clientName: $("financeExpenseVendor").value, invoiceRecordId: null, invoiceNumber: "", serviceType: "", invoiceTotalSnapshot: 0, createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+      return { id: $("financeExpenseEditId").value || createId(), type: "expense", date: $("financeExpenseDate").value, category: $("financeExpenseCategory").value, description: $("financeExpenseDescription").value, amount: $("financeExpenseAmount").dataset.raw || $("financeExpenseAmount").value, paymentMethod: $("financeExpenseMethod").value, accountId: account?.id || "", accountName: $("financeExpenseAccount").value, referenceNumber: "", notes: $("financeExpenseNotes").value, receiptReference: proofFile?.name || previous?.receiptReference || previous?.receiptFileName || "", receiptFileName: proofFile?.name || previous?.receiptFileName || "", receiptBucket: previous?.receiptBucket || "", receiptStoragePath: previous?.receiptStoragePath || "", receiptUploadedAt: previous?.receiptUploadedAt || "", vendorName: $("financeExpenseVendor").value, clientName: $("financeExpenseVendor").value, invoiceRecordId: null, invoiceNumber: "", serviceType: "", invoiceTotalSnapshot: 0, createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    }
+
+    function sanitizeStorageFileName(name) {
+      const clean = normalizeFinanceText(name, "bukti-pembayaran").replace(/[^\w.\-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      return clean || "bukti-pembayaran";
+    }
+
+    function getExistingFinanceReceipt(previous = null) {
+      return {
+        receiptReference: previous?.receiptReference || previous?.receiptFileName || "",
+        receiptFileName: previous?.receiptFileName || "",
+        receiptBucket: previous?.receiptBucket || "",
+        receiptStoragePath: previous?.receiptStoragePath || "",
+        receiptUploadedAt: previous?.receiptUploadedAt || ""
+      };
+    }
+
+    function isUploadableFinanceFile(file) {
+      return file && typeof file.size === "number" && typeof file.slice === "function";
+    }
+
+    function getFinanceReceiptFromFileReference(file, previous = null) {
+      if (!file?.name) return getExistingFinanceReceipt(previous);
+      return {
+        receiptReference: file.name,
+        receiptFileName: file.name,
+        receiptBucket: "",
+        receiptStoragePath: "",
+        receiptUploadedAt: ""
+      };
+    }
+
+    async function uploadFinanceReceiptFile(file, transactionId) {
+      const auth = await requireSupabaseUser();
+      if (!auth) throw new Error("Supabase login required");
+      const timestamp = Date.now();
+      const safeName = sanitizeStorageFileName(file.name);
+      const path = `${auth.user.id}/${transactionId}/${timestamp}-${safeName}`;
+      const uploadOptions = { cacheControl: "3600", upsert: false };
+      if (file.type) uploadOptions.contentType = file.type;
+      const { error } = await auth.client.storage.from(SUPABASE_CONFIG.proofBucket).upload(path, file, uploadOptions);
+      if (error) {
+        alert(error.message || "Upload bukti pembayaran ke Supabase gagal.");
+        throw error;
+      }
+      return {
+        receiptReference: file.name,
+        receiptFileName: file.name,
+        receiptBucket: SUPABASE_CONFIG.proofBucket,
+        receiptStoragePath: path,
+        receiptUploadedAt: new Date().toISOString()
+      };
+    }
+
+    async function removeUploadedFinanceReceipt(receipt) {
+      if (!receipt?.receiptStoragePath) return;
+      const client = getSupabaseClient();
+      if (!client) return;
+      try {
+        await client.storage.from(receipt.receiptBucket || SUPABASE_CONFIG.proofBucket).remove([receipt.receiptStoragePath]);
+      } catch (error) {
+        console.warn("Gagal membersihkan bukti pembayaran yang belum tersimpan di transaksi.", error);
+      }
+    }
+
+    async function saveManualFinanceTransaction(type) {
+      if (financeSaving) return;
+      const isIncome = type === "income";
+      const button = $(isIncome ? "saveIncomeBtn" : "saveExpenseBtn");
+      const inputId = isIncome ? "financeIncomeTransferProof" : "financeExpenseTransferProof";
+      const transaction = isIncome ? collectIncomeForm() : collectExpenseForm();
+      const previous = financeTransactions.find(item => item.id === transaction.id);
+      const proofFile = $(inputId)?.files?.[0];
+      let uploadedReceipt = null;
+      financeSaving = true;
+      button.disabled = true;
+      try {
+        uploadedReceipt = isUploadableFinanceFile(proofFile) ? await uploadFinanceReceiptFile(proofFile, transaction.id) : getFinanceReceiptFromFileReference(proofFile, previous);
+        const saved = saveFinanceTransaction({ ...transaction, ...uploadedReceipt });
+        if (!saved) {
+          await removeUploadedFinanceReceipt(uploadedReceipt);
+          return;
+        }
+        if (isIncome) resetFinanceIncomeForm();
+        else resetFinanceExpenseForm();
+      } catch (error) {
+        console.error(error);
+      } finally {
+        financeSaving = false;
+        button.disabled = false;
+      }
     }
 
     function openInvoicePayment(invoiceId, mode = "payment") {
@@ -3707,7 +3841,7 @@
       $("financePayNotes").value = "";
     }
 
-    function saveInvoicePayment() {
+    async function saveInvoicePayment() {
       if (financeSaving) return;
       const invoice = records.map(getInvoiceFinancialSnapshot).find(item => item?.id === financePaymentInvoiceId);
       if (!invoice) return;
@@ -3727,7 +3861,6 @@
       if (amount > outstanding && !confirm("Jumlah pembayaran melebihi sisa tagihan invoice. Tetap simpan sebagai lebih bayar?")) return;
       financeSaving = true;
       $("saveInvoicePaymentBtn").disabled = true;
-      const proofFile = $("financePayTransferProof").files?.[0];
       const account = findFinanceAccountByName($("financePayAccount").value);
       const downPaymentSourceKey = `${invoice.id}-down-payment`;
       const paymentSourceKey = getInvoicePaymentSourceKey(invoice.id);
@@ -3737,13 +3870,24 @@
         $("saveInvoicePaymentBtn").disabled = false;
         return;
       }
-      const saved = saveFinanceTransaction({ id: createId(), type: "income", date: $("financePayDate").value, category: financePaymentMode === "downPayment" ? "Uang Muka" : "Pembayaran Invoice", description: `${financePaymentMode === "downPayment" ? "Uang muka" : "Pembayaran"} invoice ${invoice.number}`, amount, paymentMethod: $("financePayMethod").value, accountId: account?.id || "", accountName: $("financePayAccount").value, referenceNumber: $("financePayReference").value, notes: $("financePayNotes").value, receiptReference: proofFile?.name || "", receiptFileName: proofFile?.name || "", invoiceRecordId: invoice.id, invoiceNumber: invoice.number, clientName: invoice.clientName, serviceType: invoice.serviceType, invoiceTotalSnapshot: invoice.invoiceTotal, sourceType: financePaymentMode === "downPayment" ? "invoice_down_payment" : "invoice_payment", sourceKey: financePaymentMode === "downPayment" ? downPaymentSourceKey : paymentSourceKey, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      financeSaving = false;
-      $("saveInvoicePaymentBtn").disabled = false;
-      if (saved) {
+      const transactionId = createId();
+      const proofFile = $("financePayTransferProof")?.files?.[0];
+      let uploadedReceipt = null;
+      try {
+        uploadedReceipt = isUploadableFinanceFile(proofFile) ? await uploadFinanceReceiptFile(proofFile, transactionId) : getFinanceReceiptFromFileReference(proofFile, null);
+        const saved = saveFinanceTransaction({ id: transactionId, type: "income", date: $("financePayDate").value, category: financePaymentMode === "downPayment" ? "Uang Muka" : "Pembayaran Invoice", description: `${financePaymentMode === "downPayment" ? "Uang muka" : "Pembayaran"} invoice ${invoice.number}`, amount, paymentMethod: $("financePayMethod").value, accountId: account?.id || "", accountName: $("financePayAccount").value, referenceNumber: $("financePayReference").value, notes: $("financePayNotes").value, ...uploadedReceipt, invoiceRecordId: invoice.id, invoiceNumber: invoice.number, clientName: invoice.clientName, serviceType: invoice.serviceType, invoiceTotalSnapshot: invoice.invoiceTotal, sourceType: financePaymentMode === "downPayment" ? "invoice_down_payment" : "invoice_payment", sourceKey: financePaymentMode === "downPayment" ? downPaymentSourceKey : paymentSourceKey, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+        if (!saved) {
+          await removeUploadedFinanceReceipt(uploadedReceipt);
+          return;
+        }
         $("financePaymentPanel").classList.add("is-hidden");
         financePaymentMode = "payment";
         financePaymentInvoiceId = null;
+      } catch (error) {
+        console.error(error);
+      } finally {
+        financeSaving = false;
+        $("saveInvoicePaymentBtn").disabled = false;
       }
     }
 
@@ -3835,8 +3979,8 @@
       $("financeInvoiceRecordFilter").addEventListener("input", renderInvoiceReceivables);
       $("cancelInvoicePaymentBtn").addEventListener("click", () => { $("financePaymentPanel").classList.add("is-hidden"); financePaymentMode = "payment"; financePaymentInvoiceId = null; });
       $("saveInvoicePaymentBtn").addEventListener("click", saveInvoicePayment);
-      $("saveIncomeBtn").addEventListener("click", () => { if (saveFinanceTransaction(collectIncomeForm())) resetFinanceIncomeForm(); });
-      $("saveExpenseBtn").addEventListener("click", () => { if (saveFinanceTransaction(collectExpenseForm())) resetFinanceExpenseForm(); });
+      $("saveIncomeBtn").addEventListener("click", () => saveManualFinanceTransaction("income"));
+      $("saveExpenseBtn").addEventListener("click", () => saveManualFinanceTransaction("expense"));
       $("resetIncomeFormBtn").addEventListener("click", resetFinanceIncomeForm);
       $("resetExpenseFormBtn").addEventListener("click", resetFinanceExpenseForm);
       ["financeFilterStart", "financeFilterEnd", "financeFilterType", "financeFilterCategory", "financeFilterMethod", "financeFilterSearch", "financeFilterInvoice", "financeFilterAccount"].forEach(id => $(id).addEventListener("input", renderFinanceTransactions));
@@ -4630,10 +4774,120 @@
 
     function renderSupabaseStatus() {
       const status = $("supabaseStatus");
-      if (!status) return;
-      status.textContent = supabaseUser?.email ? `Masuk: ${supabaseUser.email}` : "Belum masuk";
-      status.style.background = supabaseUser ? "var(--ok-bg)" : "";
-      status.style.color = supabaseUser ? "var(--ok)" : "";
+      const isAdmin = supabaseProfile?.role === "admin";
+      if (status) {
+        status.textContent = supabaseUser?.email ? `Masuk: ${supabaseUser.email}${isAdmin ? " (Admin)" : ""}` : "Belum masuk";
+        status.style.background = supabaseUser ? "var(--ok-bg)" : "";
+        status.style.color = supabaseUser ? "var(--ok)" : "";
+      }
+      const adminPanel = $("supabaseAdminPanel");
+      if (adminPanel) adminPanel.classList.toggle("is-hidden", !isAdmin);
+    }
+
+    async function ensureSupabaseProfile(client = getSupabaseClient(), user = supabaseUser) {
+      if (!client || !user) {
+        supabaseProfile = null;
+        renderSupabaseStatus();
+        return null;
+      }
+      const { data, error } = await client
+        .from(SUPABASE_CONFIG.profileTable)
+        .select("user_id, email, role")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (error) {
+        console.error(error);
+        setSupabaseNotice("Profil Supabase belum dapat dibaca. Sinkronisasi data tetap dapat dicoba.", true);
+        return null;
+      }
+      if (data) {
+        supabaseProfile = data;
+        renderSupabaseStatus();
+        return data;
+      }
+      const { data: inserted, error: insertError } = await client
+        .from(SUPABASE_CONFIG.profileTable)
+        .insert({ user_id: user.id, email: user.email || "", role: "user" })
+        .select("user_id, email, role")
+        .single();
+      if (insertError) {
+        console.error(insertError);
+        setSupabaseNotice("Profil Supabase belum dapat dibuat. Coba masuk ulang jika sinkronisasi gagal.", true);
+        return null;
+      }
+      supabaseProfile = inserted;
+      renderSupabaseStatus();
+      return inserted;
+    }
+
+    async function loadSupabaseAdminUsers(showNotice = true) {
+      if (supabaseProfile?.role !== "admin") return;
+      const auth = await requireSupabaseUser();
+      if (!auth) return;
+      const { data: profiles, error: profileError } = await auth.client
+        .from(SUPABASE_CONFIG.profileTable)
+        .select("user_id, email, role")
+        .order("email", { ascending: true });
+      const { data: states, error: stateError } = await auth.client
+        .from(SUPABASE_CONFIG.stateTable)
+        .select("user_id, updated_at")
+        .order("updated_at", { ascending: false });
+      if (profileError || stateError) {
+        alert(profileError?.message || stateError?.message || "Data pengguna Supabase gagal dimuat.");
+        return;
+      }
+      const profileById = new Map((profiles || []).map(profile => [profile.user_id, profile]));
+      const users = new Map();
+      (states || []).forEach(row => {
+        const profile = profileById.get(row.user_id);
+        users.set(row.user_id, {
+          user_id: row.user_id,
+          email: profile?.email || row.user_id,
+          role: profile?.role || "user",
+          updated_at: row.updated_at || ""
+        });
+      });
+      (profiles || []).forEach(profile => {
+        if (!users.has(profile.user_id)) users.set(profile.user_id, { ...profile, updated_at: "" });
+      });
+      const select = $("supabaseAdminUserSelect");
+      if (select) {
+        select.innerHTML = Array.from(users.values()).map(user => {
+          const suffix = user.updated_at ? ` - ${new Date(user.updated_at).toLocaleString("id-ID")}` : " - belum ada data cloud";
+          return `<option value="${escapeHtml(user.user_id)}">${escapeHtml(user.email || user.user_id)}${user.role === "admin" ? " (Admin)" : ""}${escapeHtml(suffix)}</option>`;
+        }).join("") || `<option value="">Belum ada pengguna</option>`;
+      }
+      if (showNotice) setSupabaseNotice("Daftar pengguna berhasil dimuat.");
+    }
+
+    async function loadSelectedSupabaseUserState() {
+      if (supabaseProfile?.role !== "admin") {
+        alert("Fitur ini hanya untuk admin.");
+        return;
+      }
+      const userId = $("supabaseAdminUserSelect")?.value || "";
+      if (!userId) {
+        alert("Pilih data pengguna terlebih dahulu.");
+        return;
+      }
+      if (!confirm("Data pengguna yang dipilih akan dimuat ke browser ini untuk diperiksa. Data lokal saat ini akan tertimpa. Lanjutkan?")) return;
+      const auth = await requireSupabaseUser();
+      if (!auth) return;
+      const { data, error } = await auth.client
+        .from(SUPABASE_CONFIG.stateTable)
+        .select("data, updated_at")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (error) {
+        alert(error.message || "Data pengguna gagal diambil.");
+        return;
+      }
+      if (!data?.data) {
+        alert("Pengguna ini belum memiliki data cloud.");
+        return;
+      }
+      const applied = applyCloudBackupPayload(data.data);
+      if (applied) setSupabaseNotice(`Data pengguna berhasil dimuat. Update cloud terakhir: ${data.updated_at || "-"}.`);
     }
 
     async function initSupabaseSync() {
@@ -4645,12 +4899,18 @@
       }
       const { data } = await client.auth.getSession();
       supabaseUser = data?.session?.user || null;
+      if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
       renderSupabaseStatus();
-      client.auth.onAuthStateChange((_event, session) => {
+      client.auth.onAuthStateChange(async (_event, session) => {
         supabaseUser = session?.user || null;
+        supabaseProfile = null;
+        if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
         renderSupabaseStatus();
       });
-      if (supabaseUser) setSupabaseNotice("Supabase terhubung. Gunakan Sinkronkan Sekarang untuk menyimpan dan mengambil data terbaru.");
+      if (supabaseUser) {
+        if (supabaseProfile?.role === "admin") await loadSupabaseAdminUsers(false);
+        setSupabaseNotice("Supabase terhubung. Gunakan Sinkronkan Sekarang untuk menyimpan dan mengambil data terbaru.");
+      }
     }
 
     async function requireSupabaseUser() {
@@ -4665,6 +4925,7 @@
         return null;
       }
       supabaseUser = data.user;
+      await ensureSupabaseProfile(client, data.user);
       renderSupabaseStatus();
       return { client, user: data.user };
     }
@@ -4687,7 +4948,9 @@
         return;
       }
       supabaseUser = data?.user || null;
+      if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
       renderSupabaseStatus();
+      if (supabaseProfile?.role === "admin") await loadSupabaseAdminUsers(false);
       setSupabaseNotice("Berhasil masuk. Klik Sinkronkan Sekarang atau Upload Data Lokal.");
     }
 
@@ -4709,6 +4972,7 @@
         return;
       }
       supabaseUser = data?.user || null;
+      if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
       renderSupabaseStatus();
       setSupabaseNotice(data?.session ? "Akun dibuat dan sudah masuk. Upload data lokal untuk mulai sinkronisasi." : "Akun dibuat. Periksa email jika Supabase meminta konfirmasi.");
     }
@@ -4718,6 +4982,7 @@
       if (!client) return;
       await client.auth.signOut();
       supabaseUser = null;
+      supabaseProfile = null;
       renderSupabaseStatus();
       setSupabaseNotice("Sudah keluar dari Supabase. Data lokal tetap tersimpan di browser.");
     }

@@ -116,3 +116,15 @@ Tambahan revisi: 21 Juli 2026
 - Menjaga LocalStorage lama sebagai cache/fallback agar aplikasi tetap bisa berjalan offline.
 - Menambahkan file dokumentasi schema `SUPABASE_SCHEMA.sql`.
 - Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.1.9`.
+
+## Supabase Storage dan Admin 24 Juli 2026
+
+- Menambahkan tabel `public.app_profiles` untuk role `user` dan `admin`.
+- Menambahkan policy admin agar admin dapat memuat data cloud pengguna lain untuk pemeriksaan laporan.
+- Menambahkan bucket private `payment-proofs` untuk bukti pembayaran berupa gambar/PDF.
+- Menambahkan policy Storage agar pengguna hanya dapat mengakses file pada folder user ID miliknya, sedangkan admin dapat membaca semua bukti pembayaran.
+- Mengubah input bukti pembayaran pada pembayaran invoice, pemasukan manual, dan pengeluaran agar file browser sungguhan diupload ke Supabase Storage.
+- Menyimpan metadata bukti baru pada transaksi: `receiptBucket`, `receiptStoragePath`, dan `receiptUploadedAt`.
+- Menambahkan tombol admin **Refresh Pengguna** dan **Muat Data Pengguna** pada panel Supabase.
+- Menjaga kompatibilitas data lama yang hanya memiliki `receiptFileName` atau `receiptReference`.
+- Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.0`.

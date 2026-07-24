@@ -55,6 +55,11 @@ Tambahan pengujian: 21 Juli 2026
 | Header periode cetak/Word | Lulus | Jenis laporan, periode, dan tanggal cetak tampil terpisah sehingga tanggal tidak bertumpuk. |
 | Schema Supabase | Lulus | Tabel `app_user_state` tersedia, RLS aktif, dan policy select/insert/update/delete per user sudah terpasang. |
 | Panel Supabase | Lulus | Menu Pengaturan Tarif memiliki kontrol Masuk, Daftar, Keluar, Sinkronkan Sekarang, Upload Data Lokal, dan Ambil Data Cloud. |
+| Supabase Storage | Lulus | Bucket private `payment-proofs` tersedia dengan batas 10 MB dan tipe gambar/PDF. |
+| Policy bukti pembayaran | Lulus | Policy Storage membatasi akses per folder user ID dan memberi admin akses baca lintas pengguna. |
+| Role admin | Lulus | Tabel `app_profiles` tersedia dengan RLS; role admin dapat membaca daftar profil dan data cloud pengguna. |
+| Upload bukti pembayaran | Lulus | Form invoice, pemasukan, dan pengeluaran menyimpan metadata Storage pada transaksi baru jika file browser sungguhan dipilih. |
+| Kompatibilitas bukti lama | Lulus | Transaksi lama yang hanya memiliki nama file tetap tampil sebagai referensi tanpa memerlukan Storage path. |
 | Fallback LocalStorage | Lulus | LocalStorage lama tetap dipakai sebagai cache/offline dan test regresi laporan keuangan tetap lulus. |
 | Data jasa notaris | Lulus | 11 kategori dan 43 layanan tertanam di file HTML. |
 | Pencarian dan filter jasa notaris | Lulus | Pencarian, filter kategori, reset, hasil kosong, dan tombol Salin lolos simulasi fungsi. |
@@ -99,4 +104,4 @@ Lingkungan pengujian internal tidak dapat mengaktifkan prompt pemasangan sistem 
 
 ## Catatan Keamanan Data
 
-Folder dan ZIP tidak memuat riwayat, backup JSON, atau data klien. Data pengguna tetap berada pada LocalStorage perangkat masing-masing.
+Folder dan ZIP tidak memuat riwayat, backup JSON, atau data klien. Data pengguna tetap berada pada LocalStorage perangkat masing-masing sampai pengguna login dan menjalankan sinkronisasi Supabase; bukti pembayaran baru yang dipilih sebagai file browser sungguhan disimpan pada Supabase Storage private.
