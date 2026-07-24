@@ -128,3 +128,11 @@ Tambahan revisi: 21 Juli 2026
 - Menambahkan tombol admin **Refresh Pengguna** dan **Muat Data Pengguna** pada panel Supabase.
 - Menjaga kompatibilitas data lama yang hanya memiliki `receiptFileName` atau `receiptReference`.
 - Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.0`.
+
+## Perapihan Setelah Supabase 24 Juli 2026
+
+- Merapikan teks yang masih menyebut data hanya tersimpan di browser/perangkat.
+- Menyesuaikan label tombol cloud menjadi **Kirim Data Lokal ke Cloud** dan **Ambil Data Cloud ke Browser**.
+- Menjelaskan bahwa Backup JSON tetap dipertahankan untuk arsip manual dan pemulihan darurat.
+- Memperbarui README agar sesuai dengan arsitektur PWA + Supabase Auth + Supabase Storage.
+- Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.1`.

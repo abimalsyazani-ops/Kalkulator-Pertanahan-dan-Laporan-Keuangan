@@ -619,7 +619,7 @@
           <div class="section-title">
             <div>
               <h3>Perhitungan Terbaru</h3>
-              <p>Daftar ringkas dari data yang tersimpan di perangkat ini.</p>
+              <p>Daftar ringkas dari data aplikasi yang tersimpan dan tersinkron.</p>
             </div>
             <button class="btn primary" type="button" data-page="calculator">Perhitungan Baru</button>
           </div>
@@ -857,7 +857,7 @@
               <div class="field"><label>&nbsp;</label><button class="btn primary" type="button" id="saveFinanceAccountBtn">Simpan Akun</button></div>
             </div>
             <div id="financeAccountsTable"></div>
-            <div class="notice" style="margin-top:14px">Data laporan keuangan tersimpan pada browser dan perangkat ini. Data tidak otomatis tersinkronisasi dengan perangkat lain. Lakukan backup secara berkala.</div>
+            <div class="notice" style="margin-top:14px">Data laporan keuangan tersimpan di LocalStorage untuk mode offline dan dapat tersinkron ke Supabase setelah pengguna masuk.</div>
           </div>
         </div>
 
@@ -1045,7 +1045,7 @@
           <div class="section-title">
             <div>
               <h3>Pengaturan Tarif</h3>
-              <p>Semua perubahan disimpan di perangkat ini dan dipakai pada perhitungan baru.</p>
+              <p>Perubahan dipakai pada perhitungan baru, tersimpan lokal untuk offline, dan tersinkron ke Supabase saat akun sudah masuk.</p>
             </div>
           </div>
           <form id="settingsForm">
@@ -1054,18 +1054,18 @@
             <div class="toolbar" style="margin-top:16px">
               <button class="btn primary" type="button" id="saveSettingsBtn">Simpan Pengaturan</button>
               <button class="btn ghost" type="button" id="resetSettingsBtn">Kembalikan ke Tarif Default</button>
-              <button class="btn success" type="button" id="exportBackupBtn">Ekspor Backup</button>
-              <button class="btn ghost" type="button" id="importBackupBtn">Impor Backup</button>
+              <button class="btn success" type="button" id="exportBackupBtn">Ekspor Backup JSON</button>
+              <button class="btn ghost" type="button" id="importBackupBtn">Impor Backup JSON</button>
               <input id="backupFileInput" type="file" accept="application/json,.json" class="is-hidden">
             </div>
-            <div class="notice" style="margin-top:14px">Data aplikasi tersimpan di browser. Lakukan backup berkala untuk mencegah kehilangan data.</div>
+            <div class="notice" style="margin-top:14px">Backup JSON tetap tersedia untuk arsip manual atau pemulihan darurat. Sinkronisasi utama menggunakan Supabase saat akun sudah masuk.</div>
           </form>
         </div>
         <div class="panel">
           <div class="section-title">
             <div>
               <h3>Sinkronisasi Supabase</h3>
-              <p>Masuk untuk menyimpan backup data ke cloud. LocalStorage tetap digunakan agar aplikasi bisa berjalan offline.</p>
+              <p>Masuk untuk menyinkronkan data ke cloud dan menyimpan bukti pembayaran di Supabase Storage. LocalStorage tetap digunakan agar aplikasi berjalan offline.</p>
             </div>
             <span class="status-pill" id="supabaseStatus">Belum masuk</span>
           </div>
@@ -1078,10 +1078,10 @@
             <button class="btn ghost" type="button" id="supabaseSignUpBtn">Daftar</button>
             <button class="btn ghost" type="button" id="supabaseSignOutBtn">Keluar</button>
             <button class="btn success" type="button" id="supabaseSyncBtn">Sinkronkan Sekarang</button>
-            <button class="btn ghost" type="button" id="supabasePushBtn">Upload Data Lokal</button>
-            <button class="btn ghost" type="button" id="supabasePullBtn">Ambil Data Cloud</button>
+            <button class="btn ghost" type="button" id="supabasePushBtn">Kirim Data Lokal ke Cloud</button>
+            <button class="btn ghost" type="button" id="supabasePullBtn">Ambil Data Cloud ke Browser</button>
           </div>
-          <div class="notice" style="margin-top:14px" id="supabaseNotice">Data cloud tersimpan per akun Supabase. Gunakan Upload Data Lokal setelah login pertama untuk memindahkan data lama dari browser ini.</div>
+          <div class="notice" style="margin-top:14px" id="supabaseNotice">Data cloud tersimpan per akun Supabase. Pada perangkat yang sudah memiliki data lama, gunakan Kirim Data Lokal ke Cloud setelah login pertama.</div>
           <div class="notice is-hidden" style="margin-top:14px" id="supabaseAdminPanel">
             <strong>Panel Admin</strong>
             <div class="grid four" style="margin-top:10px">
@@ -3508,7 +3508,7 @@
         return `<tr><td>${escapeHtml(item.number)}</td><td>${escapeHtml(item.clientName)}</td><td>${money(item.invoiceTotal)}</td><td>${money(paid)}</td><td>${money(getInvoiceOutstandingForFinance(item))}</td></tr>`;
       }).join("") || `<tr><td colspan="5">Tidak ada piutang.</td></tr>`;
       const categoryPrintRows = categoryRows.map(row => `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${money(row.total)}</td><td>${numberFormatter.format(row.percentage)}%</td></tr>`).join("") || `<tr><td colspan="4">Tidak ada data kategori.</td></tr>`;
-      return `<div class="finance-print-document"><h1>Laporan Keuangan Kantor</h1><div class="finance-print-meta"><div><strong>Jenis laporan:</strong> ${escapeHtml(reportLabel)}</div><div><strong>Periode:</strong> ${escapeHtml(periodText)}</div><div><strong>Tanggal cetak:</strong> ${escapeHtml(todayLocalISO())}</div></div><table class="finance-print-summary"><tbody><tr><td>Total pemasukan</td><td class="finance-money-cell"><strong>${money(summary.totalPemasukan)}</strong></td></tr><tr><td>Total pengeluaran</td><td class="finance-money-cell"><strong>${money(summary.totalPengeluaran)}</strong></td></tr><tr><td>Arus kas bersih</td><td class="finance-money-cell"><strong>${money(summary.arusKasBersih)}</strong></td></tr></tbody></table><h2>Rincian Transaksi</h2><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th>Vendor/Penerima</th><th>Bukti Transfer</th><th>Nominal</th></tr></thead><tbody>${transactionRows}</tbody></table><h2>Ringkasan Kategori</h2><table><thead><tr><th>Kategori</th><th>Jumlah Transaksi</th><th>Total</th><th>Persentase</th></tr></thead><tbody>${categoryPrintRows}</tbody></table><h2>Daftar Piutang</h2><table><thead><tr><th>Invoice</th><th>Klien</th><th>Total</th><th>Dibayar</th><th>Sisa</th></tr></thead><tbody>${receivableRows}</tbody></table><h2>Catatan</h2><p>Data laporan keuangan tersimpan pada browser dan perangkat ini. Pemasukan hanya dihitung dari transaksi yang dicatat.</p></div>`;
+      return `<div class="finance-print-document"><h1>Laporan Keuangan Kantor</h1><div class="finance-print-meta"><div><strong>Jenis laporan:</strong> ${escapeHtml(reportLabel)}</div><div><strong>Periode:</strong> ${escapeHtml(periodText)}</div><div><strong>Tanggal cetak:</strong> ${escapeHtml(todayLocalISO())}</div></div><table class="finance-print-summary"><tbody><tr><td>Total pemasukan</td><td class="finance-money-cell"><strong>${money(summary.totalPemasukan)}</strong></td></tr><tr><td>Total pengeluaran</td><td class="finance-money-cell"><strong>${money(summary.totalPengeluaran)}</strong></td></tr><tr><td>Arus kas bersih</td><td class="finance-money-cell"><strong>${money(summary.arusKasBersih)}</strong></td></tr></tbody></table><h2>Rincian Transaksi</h2><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th>Vendor/Penerima</th><th>Bukti Transfer</th><th>Nominal</th></tr></thead><tbody>${transactionRows}</tbody></table><h2>Ringkasan Kategori</h2><table><thead><tr><th>Kategori</th><th>Jumlah Transaksi</th><th>Total</th><th>Persentase</th></tr></thead><tbody>${categoryPrintRows}</tbody></table><h2>Daftar Piutang</h2><table><thead><tr><th>Invoice</th><th>Klien</th><th>Total</th><th>Dibayar</th><th>Sisa</th></tr></thead><tbody>${receivableRows}</tbody></table><h2>Catatan</h2><p>Data laporan keuangan dapat tersimpan di Supabase saat akun masuk, dengan LocalStorage sebagai cache offline. Pemasukan hanya dihitung dari transaksi yang dicatat.</p></div>`;
     }
 
     function printFinanceReport() {
@@ -4797,7 +4797,7 @@
         .maybeSingle();
       if (error) {
         console.error(error);
-        setSupabaseNotice("Profil Supabase belum dapat dibaca. Sinkronisasi data tetap dapat dicoba.", true);
+        setSupabaseNotice("Profil akun belum dapat dibaca. Sinkronisasi data tetap dapat dicoba.", true);
         return null;
       }
       if (data) {
@@ -4812,7 +4812,7 @@
         .single();
       if (insertError) {
         console.error(insertError);
-        setSupabaseNotice("Profil Supabase belum dapat dibuat. Coba masuk ulang jika sinkronisasi gagal.", true);
+        setSupabaseNotice("Profil akun belum dapat dibuat. Coba masuk ulang jika sinkronisasi gagal.", true);
         return null;
       }
       supabaseProfile = inserted;
@@ -4909,7 +4909,7 @@
       });
       if (supabaseUser) {
         if (supabaseProfile?.role === "admin") await loadSupabaseAdminUsers(false);
-        setSupabaseNotice("Supabase terhubung. Gunakan Sinkronkan Sekarang untuk menyimpan dan mengambil data terbaru.");
+        setSupabaseNotice("Supabase terhubung. Gunakan Sinkronkan Sekarang untuk memastikan data lokal dan cloud sama.");
       }
     }
 
@@ -4951,7 +4951,7 @@
       if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
       renderSupabaseStatus();
       if (supabaseProfile?.role === "admin") await loadSupabaseAdminUsers(false);
-      setSupabaseNotice("Berhasil masuk. Klik Sinkronkan Sekarang atau Upload Data Lokal.");
+      setSupabaseNotice("Berhasil masuk. Klik Sinkronkan Sekarang atau Kirim Data Lokal ke Cloud bila perangkat ini menyimpan data lama.");
     }
 
     async function signUpSupabase() {
@@ -4974,7 +4974,7 @@
       supabaseUser = data?.user || null;
       if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
       renderSupabaseStatus();
-      setSupabaseNotice(data?.session ? "Akun dibuat dan sudah masuk. Upload data lokal untuk mulai sinkronisasi." : "Akun dibuat. Periksa email jika Supabase meminta konfirmasi.");
+      setSupabaseNotice(data?.session ? "Akun dibuat dan sudah masuk. Kirim data lokal ke cloud untuk mulai sinkronisasi dari perangkat ini." : "Akun dibuat. Periksa email jika Supabase meminta konfirmasi.");
     }
 
     async function signOutSupabase() {
@@ -5060,7 +5060,7 @@
       if (supabaseSyncing) return false;
       const row = await fetchSupabaseCloudState();
       if (!row?.data) {
-        setSupabaseNotice("Belum ada data cloud untuk akun ini. Gunakan Upload Data Lokal terlebih dahulu.");
+        setSupabaseNotice("Belum ada data cloud untuk akun ini. Gunakan Kirim Data Lokal ke Cloud terlebih dahulu bila perangkat ini memiliki data yang ingin disimpan.");
         return false;
       }
       if (confirmFirst && !confirm("Data cloud akan menimpa data lokal di browser ini. Lanjutkan?")) return false;
