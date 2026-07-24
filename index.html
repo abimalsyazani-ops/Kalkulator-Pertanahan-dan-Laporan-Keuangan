@@ -49,6 +49,33 @@
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
     .app-shell { display: flex; min-height: 100vh; }
+    .auth-shell {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: linear-gradient(135deg, #f4f7fb 0%, #eaf1ff 100%);
+    }
+    .auth-card {
+      width: min(100%, 440px);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+    .auth-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .auth-brand .brand-mark { box-shadow: 0 8px 18px rgba(15, 39, 66, .14); }
+    .auth-brand h1 { margin: 0; font-size: 20px; line-height: 1.2; color: var(--navy); }
+    .auth-brand p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .auth-form { display: grid; gap: 14px; }
+    .auth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .auth-message { margin-top: 14px; }
 
     .sidebar {
       width: 286px;
@@ -565,7 +592,34 @@
   </style>
 </head>
 <body>
-  <div class="app-shell">
+  <div class="auth-shell" id="authGate">
+    <section class="auth-card" aria-label="Masuk aplikasi">
+      <div class="auth-brand">
+        <div class="brand-mark" role="img" aria-label="Logo aplikasi"></div>
+        <div>
+          <h1>Kalkulator Biaya Akta dan Pertanahan</h1>
+          <p>Masuk dengan email dan password untuk menyimpan data lintas perangkat.</p>
+        </div>
+      </div>
+      <form class="auth-form" id="authForm">
+        <div class="field">
+          <label for="authEmail">Email</label>
+          <input id="authEmail" type="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="authPassword">Password</label>
+          <input id="authPassword" type="password" autocomplete="current-password" minlength="6" required>
+        </div>
+        <div class="auth-actions">
+          <button class="btn primary" type="submit" id="authLoginBtn">Masuk</button>
+          <button class="btn ghost" type="button" id="authRegisterBtn">Daftar</button>
+        </div>
+      </form>
+      <div class="notice auth-message" id="authMessage">Gunakan email yang sama agar data dapat dibuka dari perangkat lain.</div>
+    </section>
+  </div>
+
+  <div class="app-shell is-hidden" id="appShell">
     <aside class="sidebar" aria-label="Menu utama">
       <div class="brand">
         <div class="brand-mark" role="img" aria-label="Logo aplikasi"></div>
@@ -584,6 +638,7 @@
           <p id="pageSubtitle">Pantau ringkasan estimasi dan pekerjaan kantor.</p>
         </div>
         <div class="topbar-actions no-print">
+          <button class="btn ghost small" type="button" id="logoutBtn">Keluar</button>
           <span class="connection-status" id="connectionStatus" role="status" aria-live="polite">Online</span>
           <button class="btn navy small is-hidden" type="button" id="installPwaBtn">Instal Aplikasi</button>
           <button class="mobile-toggle" type="button" id="menuToggle" aria-label="Buka menu">=</button>
@@ -1042,7 +1097,7 @@
             </div>
             <span class="status-pill" id="supabaseStatus">Menyiapkan sinkronisasi</span>
           </div>
-          <div class="notice" style="margin-top:14px" id="supabaseNotice">Aplikasi memakai sesi Supabase otomatis per browser. Data cloud dicek terlebih dahulu sebelum upload agar data lama tidak tertimpa.</div>
+          <div class="notice" style="margin-top:14px" id="supabaseNotice">Aplikasi memakai akun email dan password. Data cloud dicek terlebih dahulu sebelum upload agar data lama tidak tertimpa.</div>
           <div class="notice is-hidden" style="margin-top:14px" id="supabaseAdminPanel">
             <strong>Panel Admin</strong>
             <div class="grid four" style="margin-top:10px">
@@ -1281,6 +1336,8 @@
     let supabaseAutoSyncTimer = null;
     let supabaseInitialSyncComplete = false;
     let supabasePendingLocalUpload = false;
+    let supabaseUploadPaused = false;
+    let supabaseLastReconciledUserId = "";
 
     // Utilitas angka, format Rupiah, dan akses elemen.
     const $ = (id) => document.getElementById(id);
@@ -1614,6 +1671,9 @@
       $("backupFileInput").addEventListener("change", importBackupFromFile);
       $("supabaseAdminRefreshBtn").addEventListener("click", () => loadSupabaseAdminUsers(true));
       $("supabaseAdminLoadBtn").addEventListener("click", loadSelectedSupabaseUserState);
+      $("authForm").addEventListener("submit", handleSupabaseEmailLogin);
+      $("authRegisterBtn").addEventListener("click", handleSupabaseEmailRegister);
+      $("logoutBtn").addEventListener("click", handleSupabaseLogout);
       window.addEventListener("afterprint", () => { $("printResultArea").innerHTML = ""; $("financePrintArea").innerHTML = ""; document.body.classList.remove("printing-finance"); });
       window.addEventListener("storage", handleStorageChange);
     }
@@ -4862,17 +4922,53 @@
       }
     }
 
+    function setAuthMessage(message, isError = false) {
+      const messageEl = $("authMessage");
+      if (!messageEl) return;
+      messageEl.textContent = message;
+      messageEl.classList.toggle("danger", Boolean(isError));
+    }
+
+    function setAuthBusy(busy) {
+      ["authLoginBtn", "authRegisterBtn"].forEach(id => {
+        const button = $(id);
+        if (button) button.disabled = Boolean(busy);
+      });
+    }
+
+    function getAuthCredentials() {
+      const email = normalizeFinanceText($("authEmail")?.value || "").toLowerCase();
+      const password = String($("authPassword")?.value || "");
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setAuthMessage("Masukkan email yang valid.", true);
+        return null;
+      }
+      if (password.length < 6) {
+        setAuthMessage("Password minimal 6 karakter.", true);
+        return null;
+      }
+      return { email, password };
+    }
+
+    function renderAuthState() {
+      const signedIn = Boolean(supabaseUser);
+      $("authGate")?.classList.toggle("is-hidden", signedIn);
+      $("appShell")?.classList.toggle("is-hidden", !signedIn);
+      if ($("logoutBtn")) $("logoutBtn").textContent = signedIn ? `Keluar ${supabaseUser.email || ""}`.trim() : "Keluar";
+    }
+
     function renderSupabaseStatus() {
       const status = $("supabaseStatus");
       const isAdmin = supabaseProfile?.role === "admin";
       if (status) {
-        const identity = supabaseUser?.email || (supabaseUser ? "Sesi otomatis" : "");
-        status.textContent = supabaseUser ? `Sinkron aktif: ${identity}${isAdmin ? " (Admin)" : ""}` : "Menyiapkan sinkronisasi";
+        const identity = supabaseUser?.email || "";
+        status.textContent = supabaseUser ? `Sinkron aktif: ${identity}${isAdmin ? " (Admin)" : ""}` : "Belum masuk";
         status.style.background = supabaseUser ? "var(--ok-bg)" : "";
         status.style.color = supabaseUser ? "var(--ok)" : "";
       }
       const adminPanel = $("supabaseAdminPanel");
       if (adminPanel) adminPanel.classList.toggle("is-hidden", !isAdmin);
+      renderAuthState();
     }
 
     async function ensureSupabaseProfile(client = getSupabaseClient(), user = supabaseUser) {
@@ -4898,7 +4994,7 @@
       }
       const { data: inserted, error: insertError } = await client
         .from(SUPABASE_CONFIG.profileTable)
-        .insert({ user_id: user.id, email: user.email || `anonymous-${user.id.slice(0, 8)}`, role: "user" })
+        .insert({ user_id: user.id, email: user.email || `user-${user.id.slice(0, 8)}`, role: "user" })
         .select("user_id, email, role")
         .single();
       if (insertError) {
@@ -4985,42 +5081,38 @@
       const client = getSupabaseClient();
       if (!client) {
         renderSupabaseStatus();
-        setSupabaseNotice("Supabase belum dapat dimuat. Aplikasi tetap berjalan dengan LocalStorage.");
+        setAuthMessage("Supabase belum dapat dimuat. Periksa koneksi internet lalu muat ulang.", true);
         return;
       }
       const { data } = await client.auth.getSession();
       supabaseUser = data?.session?.user || null;
-      if (!supabaseUser) {
-        const anonymous = await signInSupabaseAnonymously(client);
-        if (!anonymous) return;
-      }
       if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
       renderSupabaseStatus();
       client.auth.onAuthStateChange(async (_event, session) => {
-        supabaseUser = session?.user || null;
+        const nextUser = session?.user || null;
+        const sameUser = Boolean(supabaseUser?.id && nextUser?.id === supabaseUser.id);
+        supabaseUser = nextUser;
         supabaseProfile = null;
-        if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
+        if (!sameUser) {
+          supabaseInitialSyncComplete = false;
+          supabasePendingLocalUpload = false;
+          supabaseUploadPaused = false;
+          supabaseLastReconciledUserId = "";
+        }
+        if (supabaseUser) {
+          await ensureSupabaseProfile(client, supabaseUser);
+          if (!(sameUser && supabaseInitialSyncComplete)) await reconcileSupabaseStateOnStartup();
+        } else {
+          setAuthMessage("Gunakan email yang sama agar data dapat dibuka dari perangkat lain.");
+        }
         renderSupabaseStatus();
       });
       if (supabaseUser) {
         if (supabaseProfile?.role === "admin") await loadSupabaseAdminUsers(false);
         await reconcileSupabaseStateOnStartup();
+      } else {
+        setAuthMessage("Silakan masuk atau daftar dengan email dan password.");
       }
-    }
-
-    async function signInSupabaseAnonymously(client = getSupabaseClient()) {
-      if (!client) return false;
-      const { data, error } = await client.auth.signInAnonymously();
-      if (error) {
-        console.error(error);
-        renderSupabaseStatus();
-        setSupabaseNotice("Sinkronisasi otomatis belum aktif. Aktifkan Anonymous Sign-Ins pada Supabase Auth agar pengguna tidak perlu login.", true);
-        return false;
-      }
-      supabaseUser = data?.user || null;
-      if (supabaseUser) await ensureSupabaseProfile(client, supabaseUser);
-      renderSupabaseStatus();
-      return Boolean(supabaseUser);
     }
 
     async function requireSupabaseUser() {
@@ -5031,22 +5123,95 @@
       }
       const { data, error } = await client.auth.getUser();
       if (error || !data?.user) {
-        const signed = await signInSupabaseAnonymously(client);
-        if (!signed) {
-          alert("Sinkronisasi Supabase otomatis belum aktif. Aktifkan Anonymous Sign-Ins pada Supabase Auth.");
-          return null;
-        }
-        const retry = await client.auth.getUser();
-        if (retry.error || !retry.data?.user) return null;
-        supabaseUser = retry.data.user;
-        await ensureSupabaseProfile(client, retry.data.user);
-        renderSupabaseStatus();
-        return { client, user: retry.data.user };
+        alert("Silakan login dengan email dan password terlebih dahulu.");
+        renderAuthState();
+        $("authEmail")?.focus();
+        return null;
       }
       supabaseUser = data.user;
       await ensureSupabaseProfile(client, data.user);
       renderSupabaseStatus();
       return { client, user: data.user };
+    }
+
+    async function handleSupabaseEmailLogin(event) {
+      event?.preventDefault();
+      const credentials = getAuthCredentials();
+      if (!credentials) return;
+      const client = getSupabaseClient();
+      if (!client) {
+        setAuthMessage("Supabase belum dapat dimuat. Periksa koneksi internet.", true);
+        return;
+      }
+      setAuthBusy(true);
+      setAuthMessage("Memeriksa akun...");
+      try {
+        const { data, error } = await client.auth.signInWithPassword(credentials);
+        if (error) {
+          setAuthMessage(error.message || "Email atau password tidak sesuai.", true);
+          return;
+        }
+        supabaseUser = data?.user || data?.session?.user || null;
+        if (supabaseUser) {
+          await ensureSupabaseProfile(client, supabaseUser);
+          renderSupabaseStatus();
+          await reconcileSupabaseStateOnStartup();
+          setAuthMessage("Login berhasil.");
+        }
+      } finally {
+        setAuthBusy(false);
+      }
+    }
+
+    async function handleSupabaseEmailRegister() {
+      const credentials = getAuthCredentials();
+      if (!credentials) return;
+      const client = getSupabaseClient();
+      if (!client) {
+        setAuthMessage("Supabase belum dapat dimuat. Periksa koneksi internet.", true);
+        return;
+      }
+      setAuthBusy(true);
+      setAuthMessage("Mendaftarkan akun...");
+      try {
+        const { data, error } = await client.auth.signUp(credentials);
+        if (error) {
+          setAuthMessage(error.message || "Akun gagal dibuat.", true);
+          return;
+        }
+        supabaseUser = data?.user || data?.session?.user || null;
+        if (supabaseUser && data?.session) {
+          await ensureSupabaseProfile(client, supabaseUser);
+          renderSupabaseStatus();
+          await reconcileSupabaseStateOnStartup();
+          setAuthMessage("Akun berhasil dibuat dan login.");
+        } else {
+          setAuthMessage("Akun berhasil dibuat. Jika Supabase meminta konfirmasi email, buka email lalu login kembali.");
+        }
+      } finally {
+        setAuthBusy(false);
+      }
+    }
+
+    async function handleSupabaseLogout() {
+      const client = getSupabaseClient();
+      if (!client) return;
+      if (!confirm("Keluar dari akun ini? Data cloud tetap tersimpan di Supabase.")) return;
+      const { error } = await client.auth.signOut({ scope: "local" });
+      if (error) {
+        alert(error.message || "Gagal keluar.");
+        return;
+      }
+      supabaseUser = null;
+      supabaseProfile = null;
+      supabaseInitialSyncComplete = false;
+      supabasePendingLocalUpload = false;
+      supabaseUploadPaused = false;
+      supabaseLastReconciledUserId = "";
+      clearTimeout(supabaseAutoSyncTimer);
+      renderSupabaseStatus();
+      renderAuthState();
+      setAuthMessage("Anda sudah keluar. Login kembali untuk membuka data cloud.");
     }
 
     async function fetchSupabaseCloudState(silent = false) {
@@ -5066,6 +5231,8 @@
     }
 
     async function reconcileSupabaseStateOnStartup() {
+      const currentUserId = supabaseUser?.id || "";
+      if (supabaseInitialSyncComplete && supabaseLastReconciledUserId === currentUserId) return true;
       const localPayload = buildBackupPayload();
       const localHasData = hasMeaningfulBackupData(localPayload);
       const row = await fetchSupabaseCloudState(true);
@@ -5080,27 +5247,43 @@
           const applied = applyCloudBackupPayload(row.data);
           supabaseInitialSyncComplete = true;
           supabasePendingLocalUpload = false;
+          supabaseLastReconciledUserId = currentUserId;
           if (applied) setSupabaseNotice(`Data cloud berhasil dipulihkan sebelum sinkronisasi otomatis. Update cloud terakhir: ${row.updated_at || "-"}.`);
           return applied;
         }
         supabaseInitialSyncComplete = true;
         supabasePendingLocalUpload = false;
+        supabaseLastReconciledUserId = currentUserId;
         setSupabaseNotice("Sinkronisasi otomatis aktif. Data cloud sudah dicek; perubahan lokal berikutnya akan dikirim ke Supabase.");
         return true;
       }
       supabaseInitialSyncComplete = true;
       if (localHasData || supabasePendingLocalUpload) {
-        await uploadLocalStateToSupabase(true);
+        const migrate = confirm("Akun ini belum memiliki data cloud. Upload data lokal di browser ini ke akun email yang sedang login?");
+        if (!migrate) {
+          supabaseUploadPaused = true;
+          supabasePendingLocalUpload = false;
+          supabaseLastReconciledUserId = currentUserId;
+          setSupabaseNotice("Upload otomatis ditahan. Data lokal belum dikirim ke akun ini.", true);
+          return false;
+        }
+        const uploaded = await uploadLocalStateToSupabase(true);
         supabasePendingLocalUpload = false;
-        setSupabaseNotice("Data lokal berhasil dibuat sebagai data cloud pertama.");
-        return true;
+        supabaseLastReconciledUserId = currentUserId;
+        if (uploaded) setSupabaseNotice("Data lokal berhasil dibuat sebagai data cloud pertama.");
+        return uploaded;
       }
+      supabaseLastReconciledUserId = currentUserId;
       setSupabaseNotice("Sinkronisasi otomatis aktif. Belum ada data lokal atau cloud untuk sesi ini.");
       return true;
     }
 
     async function uploadLocalStateToSupabase(silent = false) {
       if (supabaseSyncing) return false;
+      if (supabaseUploadPaused) {
+        if (!silent) setSupabaseNotice("Upload otomatis sedang ditahan. Login ulang atau gunakan sinkronisasi setelah memastikan data lokal benar.", true);
+        return false;
+      }
       if (!supabaseInitialSyncComplete) {
         supabasePendingLocalUpload = true;
         return false;
@@ -5126,6 +5309,7 @@
         supabasePendingLocalUpload = true;
         return;
       }
+      if (supabaseUploadPaused) return;
       if (!supabaseInitialSyncComplete) {
         supabasePendingLocalUpload = true;
         return;
@@ -5185,6 +5369,8 @@
       const row = await fetchSupabaseCloudState();
       if (row?.__error) return;
       if (!row?.data) {
+        if (supabaseUploadPaused && !confirm("Upload data lokal ke akun cloud ini sekarang?")) return;
+        supabaseUploadPaused = false;
         const uploaded = await uploadLocalStateToSupabase(true);
         if (uploaded) setSupabaseNotice("Data lokal berhasil dibuat sebagai data cloud pertama.");
         return;
