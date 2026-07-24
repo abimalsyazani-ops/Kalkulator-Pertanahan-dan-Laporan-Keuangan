@@ -160,3 +160,12 @@ Tambahan revisi: 21 Juli 2026
 - Kolom pencarian sekarang mencakup tanggal, jenis transaksi, kategori, keterangan, klien/vendor, invoice, metode, akun, catatan, referensi, dan bukti pembayaran.
 - Filter periode pada tab **Laporan** tetap tersedia untuk kebutuhan cetak, PDF, Word, dan Excel.
 - Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.4`.
+
+## Akun Kas dan Rekening Otomatis 24 Juli 2026
+
+- Menghapus tombol dan form **Tambah Akun** dari ringkasan laporan keuangan.
+- Akun kas/rekening baru otomatis dibuat saat transaksi memakai nama akun yang belum ada.
+- Tabel **Saldo Kas dan Rekening** hanya menampilkan akun yang memiliki saldo awal atau pernah dipakai transaksi.
+- Akun kosong bawaan tidak lagi tampil pada ringkasan.
+- Pilihan akun tetap memberi saran Kas Kantor, Rekening Bank, E-Wallet, dan Lainnya sesuai metode pembayaran.
+- Menaikkan cache PWA ke `kalkulator-akta-pwa-v1.2.5`.

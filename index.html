@@ -832,14 +832,8 @@
             <div class="section-title">
               <div>
                 <h3>Saldo Kas dan Rekening</h3>
-                <p>Saldo akun dihitung dari saldo awal ditambah pemasukan dan dikurangi pengeluaran.</p>
+                <p>Akun muncul otomatis ketika dipakai dalam transaksi.</p>
               </div>
-              <button class="btn ghost small" type="button" id="addFinanceAccountBtn">Tambah Akun</button>
-            </div>
-            <div class="grid three" style="margin-bottom:14px">
-              <div class="field"><label for="financeAccountName">Nama akun</label><input id="financeAccountName" placeholder="Kas Kantor"></div>
-              <div class="field"><label for="financeAccountOpening">Saldo awal</label><input id="financeAccountOpening" inputmode="numeric" data-finance-currency></div>
-              <div class="field"><label>&nbsp;</label><button class="btn primary" type="button" id="saveFinanceAccountBtn">Simpan Akun</button></div>
             </div>
             <div id="financeAccountsTable"></div>
             <div class="notice" style="margin-top:14px">Data laporan keuangan tersimpan di LocalStorage untuk mode offline dan tersinkron otomatis ke Supabase saat perangkat online.</div>
@@ -2833,6 +2827,60 @@
       return Boolean(account) && (transaction.accountId === account.id || normalizeFinanceAccountKey(transaction.accountName) === normalizeFinanceAccountKey(account.name));
     }
 
+    function getDefaultFinanceAccountName(method = "") {
+      if (method === "Transfer Bank") return "Rekening Bank";
+      if (method === "E-Wallet") return "E-Wallet";
+      if (method === "Lainnya") return "Lainnya";
+      return "Kas Kantor";
+    }
+
+    function getFinanceAccountIdFromName(name) {
+      const key = normalizeFinanceAccountKey(name);
+      return key || createId();
+    }
+
+    function ensureFinanceAccountInSettings(raw = {}, settingsSource = financeSettings) {
+      const cleanSettings = sanitizeFinanceSettings(settingsSource || financeSettings);
+      const accountName = normalizeFinanceText(raw.accountName, getDefaultFinanceAccountName(raw.paymentMethod));
+      const existing = getTransactionAccount({ ...raw, accountName }, cleanSettings);
+      if (existing) return { settings: cleanSettings, account: existing, changed: false };
+      const usedIds = new Set(cleanSettings.accounts.map(account => account.id));
+      let id = getFinanceAccountIdFromName(accountName);
+      if (usedIds.has(id)) id = createId();
+      const account = { id, name: accountName, openingBalance: 0 };
+      return { settings: { ...cleanSettings, accounts: [...cleanSettings.accounts, account] }, account, changed: true };
+    }
+
+    function getVisibleFinanceAccounts() {
+      return financeSettings.accounts.filter(account => {
+        if (account.openingBalance !== 0) return true;
+        return financeTransactions.some(transaction => financeAccountMatchesTransaction(account, transaction));
+      });
+    }
+
+    function getFinanceAccountOptions() {
+      const options = new Map();
+      ["Tunai", "Transfer Bank", "E-Wallet", "Lainnya"].forEach(method => {
+        const name = getDefaultFinanceAccountName(method);
+        options.set(normalizeFinanceAccountKey(name), name);
+      });
+      financeSettings.accounts.forEach(account => {
+        options.set(normalizeFinanceAccountKey(account.name), account.name);
+      });
+      return Array.from(options.values());
+    }
+
+    function updateAccountInputFromMethod(methodId, accountId, force = false) {
+      const methodInput = $(methodId);
+      const accountInput = $(accountId);
+      if (!methodInput || !accountInput) return;
+      const defaultNames = ["Tunai", "Transfer Bank", "E-Wallet", "Lainnya"].map(getDefaultFinanceAccountName);
+      const current = normalizeFinanceText(accountInput.value);
+      if (force || !current || defaultNames.includes(current)) {
+        accountInput.value = getDefaultFinanceAccountName(methodInput.value);
+      }
+    }
+
     function getFinanceReportTransactions(range) {
       return financeTransactions.filter(item => isDateInRange(item.date, range));
     }
@@ -3078,8 +3126,14 @@
     }
 
     function saveFinanceTransaction(raw) {
+      const ensuredAccount = ensureFinanceAccountInSettings(raw);
+      const rawWithAccount = {
+        ...raw,
+        accountId: ensuredAccount.account.id,
+        accountName: ensuredAccount.account.name
+      };
       const existingIds = new Set(financeTransactions.filter(item => item.id !== raw.id).map(item => item.id));
-      const validation = validateFinanceTransaction({ ...raw, id: raw.id || createId() }, existingIds);
+      const validation = validateFinanceTransaction({ ...rawWithAccount, id: rawWithAccount.id || createId() }, existingIds, { financeSettings: ensuredAccount.settings });
       if (!validation.valid) {
         alert(validation.error);
         return false;
@@ -3092,7 +3146,10 @@
         return false;
       }
       nextTransactions.unshift(item);
-      if (!persistFinanceTransactions(nextTransactions)) return false;
+      const saved = ensuredAccount.changed
+        ? persistFinanceState(ensuredAccount.settings, nextTransactions)
+        : persistFinanceTransactions(nextTransactions);
+      if (!saved) return false;
       renderFinanceAll();
       return true;
     }
@@ -3313,15 +3370,20 @@
 
     function renderFinanceAccounts() {
       if (!$("financeAccountsTable")) return;
-      const rows = financeSettings.accounts.map(account => {
+      const visibleAccounts = getVisibleFinanceAccounts();
+      const options = getFinanceAccountOptions().map(name => `<option value="${escapeHtml(name)}"></option>`).join("");
+      $("financeAccountList").innerHTML = options;
+      if (!visibleAccounts.length) {
+        $("financeAccountsTable").innerHTML = `<div class="empty">Belum ada akun kas atau rekening yang digunakan transaksi.</div>`;
+        return;
+      }
+      const rows = visibleAccounts.map(account => {
         const income = financeTransactions.filter(item => item.type === "income" && financeAccountMatchesTransaction(account, item)).reduce((sum, item) => sum + item.amount, 0);
         const expense = financeTransactions.filter(item => item.type === "expense" && financeAccountMatchesTransaction(account, item)).reduce((sum, item) => sum + item.amount, 0);
         const balance = account.openingBalance + income - expense;
-        return `<tr><td>${escapeHtml(account.name)}</td><td>${money(account.openingBalance)}</td><td>${money(income)}</td><td>${money(expense)}</td><td><strong>${money(balance)}</strong></td><td><div class="table-actions"><button class="btn small ghost btn-edit-finance-account" type="button" data-account-id="${escapeHtml(account.id)}">Edit</button><button class="btn small danger btn-delete-finance-account" type="button" data-account-id="${escapeHtml(account.id)}">Hapus</button></div></td></tr>`;
+        return `<tr><td>${escapeHtml(account.name)}</td><td>${money(account.openingBalance)}</td><td>${money(income)}</td><td>${money(expense)}</td><td><strong>${money(balance)}</strong></td></tr>`;
       }).join("");
-      $("financeAccountsTable").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Akun</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-      const options = financeSettings.accounts.map(account => `<option value="${escapeHtml(account.name)}"></option>`).join("");
-      $("financeAccountList").innerHTML = options;
+      $("financeAccountsTable").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Akun</th><th>Saldo awal</th><th>Pemasukan</th><th>Pengeluaran</th><th>Saldo</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
 
     function renderInvoiceReceivables() {
@@ -3646,7 +3708,7 @@
       $("financeIncomeDate").value = todayLocalISO();
       $("financeIncomeCategory").value = financeIncomeCategories[0];
       $("financeIncomeMethod").value = "Tunai";
-      $("financeIncomeAccount").value = financeSettings.accounts[0]?.name || "Kas Kantor";
+      updateAccountInputFromMethod("financeIncomeMethod", "financeIncomeAccount", true);
       setCurrencyInputForElement($("financeIncomeAmount"), 0);
     }
 
@@ -3655,7 +3717,7 @@
       $("financeExpenseDate").value = todayLocalISO();
       $("financeExpenseCategory").value = financeExpenseCategories[0];
       $("financeExpenseMethod").value = "Tunai";
-      $("financeExpenseAccount").value = financeSettings.accounts[0]?.name || "Kas Kantor";
+      updateAccountInputFromMethod("financeExpenseMethod", "financeExpenseAccount", true);
       setCurrencyInputForElement($("financeExpenseAmount"), 0);
     }
 
@@ -3791,7 +3853,7 @@
       $("financePayDate").value = todayLocalISO();
       setCurrencyInputForElement($("financePayAmount"), mode === "downPayment" ? invoice.downPayment : Math.max(0, invoice.invoiceTotal - paid));
       $("financePayMethod").value = "Tunai";
-      $("financePayAccount").value = financeSettings.accounts[0]?.name || "Kas Kantor";
+      updateAccountInputFromMethod("financePayMethod", "financePayAccount", true);
       $("financePayReference").value = "";
       $("financePayTransferProof").value = "";
       $("financePayNotes").value = "";
@@ -3915,14 +3977,9 @@
       $("financeFilterCategory").innerHTML = filterCategoryOptions;
       $("financeExpenseCategoryList").innerHTML = financeExpenseCategories.map(item => `<option value="${escapeHtml(item)}"></option>`).join("");
       document.querySelectorAll(".finance-tab-button").forEach(button => button.addEventListener("click", () => setFinanceTab(button.dataset.financeTab)));
-      $("addFinanceAccountBtn").addEventListener("click", () => resetFinanceAccountForm(true));
-      $("saveFinanceAccountBtn").addEventListener("click", saveFinanceAccount);
-      $("financeAccountsTable").addEventListener("click", event => {
-        const editButton = event.target.closest(".btn-edit-finance-account");
-        const deleteButton = event.target.closest(".btn-delete-finance-account");
-        if (editButton) editFinanceAccount(editButton.dataset.accountId);
-        if (deleteButton) deleteFinanceAccount(deleteButton.dataset.accountId);
-      });
+      $("financePayMethod").addEventListener("change", () => updateAccountInputFromMethod("financePayMethod", "financePayAccount"));
+      $("financeIncomeMethod").addEventListener("change", () => updateAccountInputFromMethod("financeIncomeMethod", "financeIncomeAccount"));
+      $("financeExpenseMethod").addEventListener("change", () => updateAccountInputFromMethod("financeExpenseMethod", "financeExpenseAccount"));
       $("financeInvoiceTable").addEventListener("click", event => {
         const pay = event.target.closest(".btn-pay-invoice");
         const dp = event.target.closest(".btn-record-down-payment");
@@ -3956,7 +4013,6 @@
       $("downloadFinanceWordBtn").addEventListener("click", downloadFinanceWord);
       $("exportFinanceExcelBtn").addEventListener("click", exportFinanceExcel);
       $("financeReportDate").value = todayLocalISO();
-      resetFinanceAccountForm(false);
       resetFinanceIncomeForm();
       resetFinanceExpenseForm();
       renderFinanceAll();
