@@ -1009,13 +1009,17 @@
               </div>
             </div>
             <div class="grid four" style="margin-bottom:14px">
-              <div class="field"><label for="financeReportType">Jenis laporan</label><select id="financeReportType"><option value="daily">Laporan Harian</option><option value="monthly">Laporan Bulanan</option><option value="yearly">Laporan Tahunan</option><option value="custom">Periode Khusus</option></select></div>
-              <div class="field"><label for="financeReportDate">Tanggal / bulan / tahun</label><input id="financeReportDate" type="date"></div>
-              <div class="field"><label for="financeReportStart">Tanggal mulai</label><input id="financeReportStart" type="date"></div>
-              <div class="field"><label for="financeReportEnd">Tanggal akhir</label><input id="financeReportEnd" type="date"></div>
+              <div class="field"><label for="financeReportType">Periode laporan</label><select id="financeReportType"><option value="daily">Harian</option><option value="monthly">Bulanan</option><option value="yearly">Tahunan</option><option value="custom">Periode Khusus</option><option value="all">Semua Periode</option></select></div>
+              <div class="field" id="financeReportDateWrap"><label for="financeReportDate" id="financeReportDateLabel">Tanggal laporan</label><input id="financeReportDate" type="date"></div>
+              <div class="field" id="financeReportStartWrap"><label for="financeReportStart">Tanggal mulai</label><input id="financeReportStart" type="date"></div>
+              <div class="field" id="financeReportEndWrap"><label for="financeReportEnd">Tanggal akhir</label><input id="financeReportEnd" type="date"></div>
+              <div class="field"><label for="financeReportTransactionType">Jenis transaksi</label><select id="financeReportTransactionType"><option value="">Semua transaksi</option><option value="income">Pemasukan</option><option value="expense">Pengeluaran</option></select></div>
+              <div class="field"><label for="financeReportCategory">Kategori</label><select id="financeReportCategory"><option value="">Semua kategori</option></select></div>
+              <div class="field span-2"><label for="financeReportSearch">Cari dalam laporan</label><input id="financeReportSearch" placeholder="Cari klien, vendor, invoice, akun, metode, atau keterangan"></div>
             </div>
             <div class="toolbar" style="margin-bottom:14px">
               <button class="btn primary" type="button" id="applyFinanceReportBtn">Tampilkan Laporan</button>
+              <button class="btn ghost" type="button" id="resetFinanceReportBtn">Reset Filter</button>
               <button class="btn ghost" type="button" id="printFinanceReportBtn">Cetak Laporan</button>
               <button class="btn ghost" type="button" id="printFinancePdfBtn">Cetak PDF</button>
               <button class="btn ghost" type="button" id="downloadFinanceWordBtn">Unduh Word</button>
@@ -1120,6 +1124,34 @@
             </div>
             <small>Admin dapat memuat data pengguna untuk memeriksa laporan dan bukti pembayaran dari perangkat lain.</small>
           </div>
+        </div>
+        <div class="panel">
+          <div class="section-title">
+            <div>
+              <h3>Pengaturan Akun</h3>
+              <p>Kelola akun login dan kata sandi yang dipakai untuk membuka data cloud.</p>
+            </div>
+          </div>
+          <div class="grid four">
+            <div class="field span-2"><label for="accountEmail">Email akun</label><input id="accountEmail" class="readonly" readonly></div>
+            <div class="field"><label for="accountRole">Hak akses</label><input id="accountRole" class="readonly" readonly></div>
+            <div class="field"><label for="accountSyncStatus">Status</label><input id="accountSyncStatus" class="readonly" readonly></div>
+            <div class="field span-2">
+              <label for="accountNewPassword">Kata sandi baru</label>
+              <input id="accountNewPassword" type="password" autocomplete="new-password" minlength="6">
+            </div>
+            <div class="field span-2">
+              <label for="accountConfirmPassword">Ulangi kata sandi baru</label>
+              <div class="password-input-wrap">
+                <input id="accountConfirmPassword" type="password" autocomplete="new-password" minlength="6">
+                <button class="btn ghost small" type="button" id="accountTogglePassword" aria-pressed="false">Tampilkan</button>
+              </div>
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:14px">
+            <button class="btn primary" type="button" id="accountChangePasswordBtn">Ubah Kata Sandi</button>
+          </div>
+          <div class="notice" style="margin-top:14px" id="accountNotice">Gunakan kata sandi minimal 6 karakter. Setelah berhasil diubah, gunakan kata sandi baru saat login berikutnya.</div>
         </div>
       </section>
     </main>
@@ -1686,6 +1718,8 @@
       $("authRegisterBtn").addEventListener("click", handleSupabaseEmailRegister);
       $("authResendBtn").addEventListener("click", handleSupabaseResendConfirmation);
       $("authTogglePassword").addEventListener("click", toggleAuthPasswordVisibility);
+      $("accountTogglePassword").addEventListener("click", toggleAccountPasswordVisibility);
+      $("accountChangePasswordBtn").addEventListener("click", handleAccountPasswordUpdate);
       $("logoutBtn").addEventListener("click", handleSupabaseLogout);
       window.addEventListener("afterprint", () => { $("printResultArea").innerHTML = ""; $("financePrintArea").innerHTML = ""; document.body.classList.remove("printing-finance"); });
       window.addEventListener("storage", handleStorageChange);
@@ -3418,11 +3452,51 @@
       return true;
     }
 
-    function calculateFinanceSummary(range = getFinancePeriodRange()) {
+    function getFinanceReportFilters() {
+      const type = $("financeReportTransactionType")?.value || "";
+      const category = ($("financeReportCategory")?.value || "").toLowerCase().trim();
+      const search = ($("financeReportSearch")?.value || "").toLowerCase().trim();
+      return { type, category, search };
+    }
+
+    function filterFinanceTransactionsForReport(transactions, filters = {}) {
+      return transactions.filter(item => {
+        const vendorName = getFinanceVendorName(item);
+        const haystack = [
+          item.date,
+          item.type === "income" ? "pemasukan" : "pengeluaran",
+          item.category,
+          item.description,
+          item.clientName,
+          vendorName,
+          item.invoiceNumber,
+          item.paymentMethod,
+          item.accountName,
+          item.notes,
+          item.referenceNumber,
+          item.receiptReference,
+          item.receiptFileName
+        ].join(" ").toLowerCase();
+        return (!filters.type || item.type === filters.type) &&
+          (!filters.category || item.category.toLowerCase() === filters.category) &&
+          (!filters.search || haystack.includes(filters.search));
+      });
+    }
+
+    function formatFinanceReportFilterText(filters = getFinanceReportFilters()) {
+      const parts = [];
+      if (filters.type === "income") parts.push("Pemasukan");
+      if (filters.type === "expense") parts.push("Pengeluaran");
+      if (filters.category) parts.push(`Kategori: ${filters.category}`);
+      if (filters.search) parts.push(`Pencarian: ${filters.search}`);
+      return parts.join("; ") || "Semua transaksi";
+    }
+
+    function calculateFinanceSummary(range = getFinancePeriodRange(), filters = {}) {
       if (isInvalidFinanceRange(range)) {
         return { transactions: [], totalPemasukan: 0, totalPengeluaran: 0, arusKasBersih: 0, totalNilaiInvoice: 0, totalPembayaranInvoice: 0, totalPiutang: 0, jumlahInvoiceBelumLunas: 0, jumlahTransaksi: 0 };
       }
-      const transactions = financeTransactions.filter(item => isDateInRange(item.date, range));
+      const transactions = filterFinanceTransactionsForReport(financeTransactions.filter(item => isDateInRange(item.date, range)), filters);
       const totalPemasukan = transactions.filter(item => item.type === "income").reduce((sum, item) => sum + item.amount, 0);
       const totalPengeluaran = transactions.filter(item => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
       const invoiceSnapshots = records.map(getInvoiceFinancialSnapshot).filter(item => item && item.id && item.invoiceTotal > 0 && isDateInRange(item.date, range));
@@ -3572,13 +3646,47 @@
       return `<div class="table-wrap"><table><thead><tr><th>Kategori</th><th>Jumlah Transaksi</th><th>Total</th><th>Persentase</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${money(row.total)}</td><td>${numberFormatter.format(row.percentage)}%</td></tr>`).join("")}</tbody></table></div>`;
     }
 
+    function getMonthEndISO(date = todayLocalISO()) {
+      const year = Number(date.slice(0, 4));
+      const month = Number(date.slice(5, 7));
+      const end = new Date(year, month, 0).getDate();
+      return `${date.slice(0, 7)}-${String(end).padStart(2, "0")}`;
+    }
+
     function getFinanceReportRange() {
       const type = $("financeReportType")?.value || "daily";
       const date = $("financeReportDate")?.value || todayLocalISO();
-      if (type === "monthly") return { start: `${date.slice(0, 7)}-01`, end: `${date.slice(0, 7)}-31`, label: `Laporan Bulanan ${date.slice(0, 7)}` };
+      if (type === "all") return { start: "", end: "", label: "Semua Periode" };
+      if (type === "monthly") return { start: `${date.slice(0, 7)}-01`, end: getMonthEndISO(date), label: `Laporan Bulanan ${date.slice(0, 7)}` };
       if (type === "yearly") return { start: `${date.slice(0, 4)}-01-01`, end: `${date.slice(0, 4)}-12-31`, label: `Laporan Tahunan ${date.slice(0, 4)}` };
       if (type === "custom") return { start: $("financeReportStart").value || "", end: $("financeReportEnd").value || "", label: "Periode Khusus" };
       return { start: date, end: date, label: `Laporan Harian ${date}` };
+    }
+
+    function updateFinanceReportFilterUi() {
+      const type = $("financeReportType")?.value || "daily";
+      const showDate = !["custom", "all"].includes(type);
+      $("financeReportDateWrap")?.classList.toggle("is-hidden", !showDate);
+      $("financeReportStartWrap")?.classList.toggle("is-hidden", type !== "custom");
+      $("financeReportEndWrap")?.classList.toggle("is-hidden", type !== "custom");
+      const label = $("financeReportDateLabel");
+      if (label) {
+        if (type === "monthly") label.textContent = "Pilih tanggal dalam bulan";
+        else if (type === "yearly") label.textContent = "Pilih tanggal dalam tahun";
+        else label.textContent = "Tanggal laporan";
+      }
+    }
+
+    function resetFinanceReportFilter() {
+      $("financeReportType").value = "daily";
+      $("financeReportDate").value = todayLocalISO();
+      $("financeReportStart").value = "";
+      $("financeReportEnd").value = "";
+      $("financeReportTransactionType").value = "";
+      $("financeReportCategory").value = "";
+      $("financeReportSearch").value = "";
+      updateFinanceReportFilterUi();
+      renderFinanceReport();
     }
 
     function isInvalidFinanceRange(range) {
@@ -3608,7 +3716,8 @@
       if (!$("financeReportContent")) return;
       const range = getFinanceReportRange();
       if (!guardFinanceRange(range)) return;
-      const summary = calculateFinanceSummary(range);
+      const reportFilters = getFinanceReportFilters();
+      const summary = calculateFinanceSummary(range, reportFilters);
       const receivables = records.map(getInvoiceFinancialSnapshot).filter(item => item && item.invoiceTotal > 0 && isDateInRange(item.date, range)).map(item => {
         const paid = getInvoicePaidAmount(item.id);
         const outstanding = getInvoiceOutstandingForFinance(item);
@@ -3623,6 +3732,7 @@
           <div class="metric total"><span>Arus kas bersih</span><strong>${money(summary.arusKasBersih)}</strong></div>
           <div class="metric"><span>Piutang invoice</span><strong>${money(summary.totalPiutang)}</strong></div>
         </div>
+        <div class="notice">Periode: ${escapeHtml(formatFinancePeriodText(range))}. Filter: ${escapeHtml(formatFinanceReportFilterText(reportFilters))}. Transaksi tampil: ${summary.jumlahTransaksi}.</div>
         <div><h3>Pemasukan berdasarkan kategori</h3>${buildCategoryTable(groupFinanceBy(summary.transactions, "category", "income"))}</div>
         <div><h3>Pengeluaran berdasarkan kategori</h3>${buildCategoryTable(groupFinanceBy(summary.transactions, "category", "expense"))}</div>
         <div><h3>Pemasukan berdasarkan metode pembayaran</h3>${buildCategoryTable(groupFinanceBy(summary.transactions, "paymentMethod", "income"))}</div>
@@ -3632,9 +3742,11 @@
 
     function buildFinancePrintReport() {
       const range = getFinanceReportRange();
-      const summary = calculateFinanceSummary(range);
+      const reportFilters = getFinanceReportFilters();
+      const summary = calculateFinanceSummary(range, reportFilters);
       const reportLabel = getFinanceReportLabelForPrint(range);
       const periodText = formatFinancePeriodText(range);
+      const filterText = formatFinanceReportFilterText(reportFilters);
       const categoryRows = groupFinanceBy(summary.transactions, "category", "income").concat(groupFinanceBy(summary.transactions, "category", "expense"));
       const transactionRows = summary.transactions.map(item => `<tr><td>${escapeHtml(item.date)}</td><td>${item.type === "income" ? "Pemasukan" : "Pengeluaran"}</td><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.description || "-")}</td><td>${escapeHtml(getFinanceVendorName(item) || "-")}</td><td>${escapeHtml(getFinanceProofLabel(item))}</td><td class="finance-money-cell">${money(item.amount)}</td></tr>`).join("") || `<tr><td colspan="7">Tidak ada transaksi.</td></tr>`;
       const receivableRows = getFinanceReceivables(range).map(item => {
@@ -3642,7 +3754,7 @@
         return `<tr><td>${escapeHtml(item.number)}</td><td>${escapeHtml(item.clientName)}</td><td>${money(item.invoiceTotal)}</td><td>${money(paid)}</td><td>${money(getInvoiceOutstandingForFinance(item))}</td></tr>`;
       }).join("") || `<tr><td colspan="5">Tidak ada piutang.</td></tr>`;
       const categoryPrintRows = categoryRows.map(row => `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${money(row.total)}</td><td>${numberFormatter.format(row.percentage)}%</td></tr>`).join("") || `<tr><td colspan="4">Tidak ada data kategori.</td></tr>`;
-      return `<div class="finance-print-document"><h1>Laporan Keuangan Kantor</h1><div class="finance-print-meta"><div><strong>Jenis laporan:</strong> ${escapeHtml(reportLabel)}</div><div><strong>Periode:</strong> ${escapeHtml(periodText)}</div><div><strong>Tanggal cetak:</strong> ${escapeHtml(todayLocalISO())}</div></div><table class="finance-print-summary"><tbody><tr><td>Total pemasukan</td><td class="finance-money-cell"><strong>${money(summary.totalPemasukan)}</strong></td></tr><tr><td>Total pengeluaran</td><td class="finance-money-cell"><strong>${money(summary.totalPengeluaran)}</strong></td></tr><tr><td>Arus kas bersih</td><td class="finance-money-cell"><strong>${money(summary.arusKasBersih)}</strong></td></tr></tbody></table><h2>Rincian Transaksi</h2><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th>Vendor/Penerima</th><th>Bukti Transfer</th><th>Nominal</th></tr></thead><tbody>${transactionRows}</tbody></table><h2>Ringkasan Kategori</h2><table><thead><tr><th>Kategori</th><th>Jumlah Transaksi</th><th>Total</th><th>Persentase</th></tr></thead><tbody>${categoryPrintRows}</tbody></table><h2>Daftar Piutang</h2><table><thead><tr><th>Invoice</th><th>Klien</th><th>Total</th><th>Dibayar</th><th>Sisa</th></tr></thead><tbody>${receivableRows}</tbody></table><h2>Catatan</h2><p>Data laporan keuangan dapat tersimpan di Supabase secara otomatis, dengan LocalStorage sebagai cache offline. Pemasukan hanya dihitung dari transaksi yang dicatat.</p></div>`;
+      return `<div class="finance-print-document"><h1>Laporan Keuangan Kantor</h1><div class="finance-print-meta"><div><strong>Jenis laporan:</strong> ${escapeHtml(reportLabel)}</div><div><strong>Periode:</strong> ${escapeHtml(periodText)}</div><div><strong>Filter:</strong> ${escapeHtml(filterText)}</div><div><strong>Tanggal cetak:</strong> ${escapeHtml(todayLocalISO())}</div></div><table class="finance-print-summary"><tbody><tr><td>Total pemasukan</td><td class="finance-money-cell"><strong>${money(summary.totalPemasukan)}</strong></td></tr><tr><td>Total pengeluaran</td><td class="finance-money-cell"><strong>${money(summary.totalPengeluaran)}</strong></td></tr><tr><td>Arus kas bersih</td><td class="finance-money-cell"><strong>${money(summary.arusKasBersih)}</strong></td></tr></tbody></table><h2>Rincian Transaksi</h2><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Kategori</th><th>Keterangan</th><th>Vendor/Penerima</th><th>Bukti Transfer</th><th>Nominal</th></tr></thead><tbody>${transactionRows}</tbody></table><h2>Ringkasan Kategori</h2><table><thead><tr><th>Kategori</th><th>Jumlah Transaksi</th><th>Total</th><th>Persentase</th></tr></thead><tbody>${categoryPrintRows}</tbody></table><h2>Daftar Piutang</h2><table><thead><tr><th>Invoice</th><th>Klien</th><th>Total</th><th>Dibayar</th><th>Sisa</th></tr></thead><tbody>${receivableRows}</tbody></table><h2>Catatan</h2><p>Data laporan keuangan dapat tersimpan di Supabase secara otomatis, dengan LocalStorage sebagai cache offline. Pemasukan hanya dihitung dari transaksi yang dicatat.</p></div>`;
     }
 
     function printFinanceReport() {
@@ -3727,13 +3839,15 @@
       }
       const range = getFinanceReportRange();
       if (!guardFinanceRange(range)) return;
-      const summary = calculateFinanceSummary(range);
+      const reportFilters = getFinanceReportFilters();
+      const summary = calculateFinanceSummary(range, reportFilters);
       const workbook = XLSX.utils.book_new();
       const incomeByCategory = groupFinanceBy(summary.transactions, "category", "income");
       const expenseByCategory = groupFinanceBy(summary.transactions, "category", "expense");
       const summaryRows = [
         ["LAPORAN KEUANGAN KANTOR"],
         ["Periode", range.label, range.start || "-", range.end || "-"],
+        ["Filter", formatFinanceReportFilterText(reportFilters)],
         [],
         ["Ringkasan", "Nominal"],
         ["Total Pemasukan", summary.totalPemasukan],
@@ -4092,6 +4206,7 @@
       $("financeExpenseCategory").innerHTML = financeExpenseCategories.map(item => `<option>${escapeHtml(item)}</option>`).join("");
       const filterCategoryOptions = ["", ...financeIncomeCategories, ...financeExpenseCategories].map(item => item ? `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>` : `<option value="">Semua kategori</option>`).join("");
       $("financeFilterCategory").innerHTML = filterCategoryOptions;
+      $("financeReportCategory").innerHTML = filterCategoryOptions;
       $("financeExpenseCategoryList").innerHTML = financeExpenseCategories.map(item => `<option value="${escapeHtml(item)}"></option>`).join("");
       document.querySelectorAll(".finance-tab-button").forEach(button => button.addEventListener("click", () => setFinanceTab(button.dataset.financeTab)));
       $("financePayMethod").addEventListener("change", () => updateAccountInputFromMethod("financePayMethod", "financePayAccount"));
@@ -4125,11 +4240,19 @@
         if (button.matches(".btn-delete-finance")) deleteFinanceTransaction(id);
       });
       $("applyFinanceReportBtn").addEventListener("click", renderFinanceReport);
+      $("resetFinanceReportBtn").addEventListener("click", resetFinanceReportFilter);
+      ["financeReportType", "financeReportDate", "financeReportStart", "financeReportEnd", "financeReportTransactionType", "financeReportCategory", "financeReportSearch"].forEach(id => {
+        $(id).addEventListener("input", () => {
+          if (id === "financeReportType") updateFinanceReportFilterUi();
+          renderFinanceReport();
+        });
+      });
       $("printFinanceReportBtn").addEventListener("click", printFinanceReport);
       $("printFinancePdfBtn").addEventListener("click", printFinanceReport);
       $("downloadFinanceWordBtn").addEventListener("click", downloadFinanceWord);
       $("exportFinanceExcelBtn").addEventListener("click", exportFinanceExcel);
       $("financeReportDate").value = todayLocalISO();
+      updateFinanceReportFilterUi();
       resetFinanceIncomeForm();
       resetFinanceExpenseForm();
       renderFinanceAll();
@@ -4986,11 +5109,67 @@
       input.focus();
     }
 
+    function setAccountNotice(message, isError = false) {
+      const notice = $("accountNotice");
+      if (!notice) return;
+      notice.textContent = message;
+      notice.classList.toggle("danger", Boolean(isError));
+    }
+
+    function renderAccountSettings() {
+      if ($("accountEmail")) $("accountEmail").value = supabaseUser?.email || "-";
+      if ($("accountRole")) $("accountRole").value = supabaseProfile?.role === "admin" ? "Admin" : "Pengguna";
+      if ($("accountSyncStatus")) $("accountSyncStatus").value = supabaseUser ? "Login aktif" : "Belum login";
+    }
+
+    function toggleAccountPasswordVisibility() {
+      const first = $("accountNewPassword");
+      const second = $("accountConfirmPassword");
+      const button = $("accountTogglePassword");
+      if (!first || !second || !button) return;
+      const shouldShow = first.type === "password";
+      first.type = shouldShow ? "text" : "password";
+      second.type = shouldShow ? "text" : "password";
+      button.textContent = shouldShow ? "Sembunyikan" : "Tampilkan";
+      button.setAttribute("aria-pressed", String(shouldShow));
+      first.focus();
+    }
+
+    async function handleAccountPasswordUpdate() {
+      const auth = await requireSupabaseUser();
+      if (!auth) return;
+      const password = String($("accountNewPassword")?.value || "");
+      const confirmPassword = String($("accountConfirmPassword")?.value || "");
+      if (password.length < 6) {
+        setAccountNotice("Kata sandi baru minimal 6 karakter.", true);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setAccountNotice("Kata sandi baru dan pengulangan kata sandi tidak sama.", true);
+        return;
+      }
+      $("accountChangePasswordBtn").disabled = true;
+      setAccountNotice("Menyimpan kata sandi baru...");
+      try {
+        const { error } = await auth.client.auth.updateUser({ password });
+        if (error) {
+          setAccountNotice(error.message || "Kata sandi gagal diubah.", true);
+          return;
+        }
+        $("accountNewPassword").value = "";
+        $("accountConfirmPassword").value = "";
+        setAccountNotice("Kata sandi berhasil diubah. Gunakan kata sandi baru saat login berikutnya.");
+      } finally {
+        $("accountChangePasswordBtn").disabled = false;
+      }
+    }
+
     function renderAuthState() {
       const signedIn = Boolean(supabaseUser);
       $("authGate")?.classList.toggle("is-hidden", signedIn);
       $("appShell")?.classList.toggle("is-hidden", !signedIn);
       if ($("logoutBtn")) $("logoutBtn").textContent = signedIn ? `Keluar ${supabaseUser.email || ""}`.trim() : "Keluar";
+      renderAccountSettings();
     }
 
     function renderSupabaseStatus() {
